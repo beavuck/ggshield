@@ -23,14 +23,14 @@ def test_send_agent_activity_batch_serialises_and_calls_client() -> None:
     events = [
         AgentActivityEvent(
             agent_name="claude-code",
-            source_kind="session_transcript",
+            source_kind="5_session_transcript",
             source_path="projects/-p/bc7b2260.jsonl",
             record_offset="0000000",
             content='{"x": 1}',
         ),
         AgentActivityEvent(
             agent_name="cursor",
-            source_kind="composer_bubble",
+            source_kind="6_composer_bubble",
             source_path="globalStorage/state.vscdb",
             record_offset="bubbleId:abc:xyz",
             content='{"key": "bubbleId:abc:xyz", "value": "{"y": 2}"}',
@@ -41,14 +41,14 @@ def test_send_agent_activity_batch_serialises_and_calls_client() -> None:
         [
             {
                 "agent_name": "claude-code",
-                "source_kind": "session_transcript",
+                "source_kind": "5_session_transcript",
                 "source_path": "projects/-p/bc7b2260.jsonl",
                 "record_offset": "0000000",
                 "content": '{"x": 1}',
             },
             {
                 "agent_name": "cursor",
-                "source_kind": "composer_bubble",
+                "source_kind": "6_composer_bubble",
                 "source_path": "globalStorage/state.vscdb",
                 "record_offset": "bubbleId:abc:xyz",
                 "content": '{"key": "bubbleId:abc:xyz", "value": "{"y": 2}"}',
@@ -104,6 +104,7 @@ def test_collect_agent_activity_attaches_user_to_each_batch() -> None:
 
     args, _ = client.send_agent_activity.call_args
     assert args[1] == _USER
+
 
 def test_collect_agent_activity_batches_in_chunks_of_batch_size(
     monkeypatch: pytest.MonkeyPatch,
