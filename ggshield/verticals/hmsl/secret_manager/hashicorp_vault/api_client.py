@@ -81,6 +81,9 @@ class VaultAPIClient:
     def list_kv_items(self, mount: VaultKvMount, path: str) -> List[str]:
         logger.debug(f"Listing kv items for mount {mount.name} at {path}")
 
+        # Strip leading slash so the endpoint stays canonical: recent Vault versions
+        # reject non-canonical "//" paths with a 400 instead of redirecting them.
+        path = path.lstrip("/")
         api_endpoint = (
             f"{mount.name}/metadata/{path}"
             if mount.version == "2"
