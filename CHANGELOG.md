@@ -1,5 +1,15 @@
 # Changelog
 
+<a id='changelog-1.52.1'></a>
+
+## 1.52.1 — 2026-06-16
+
+### Fixed
+
+- `ggshield hmsl` Vault integration: list secrets correctly when a KV path has a leading slash, instead of failing against recent HashiCorp Vault versions that reject non-canonical paths.
+
+- ggshield no longer crashes on startup when the optional `truststore` setup fails (for example on recent macOS versions where the OS version cannot be parsed). It now falls back to the bundled `certifi` certificates instead.
+
 <a id='changelog-1.52.0'></a>
 
 ## 1.52.0 — 2026-06-15
