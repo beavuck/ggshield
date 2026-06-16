@@ -106,8 +106,9 @@ def plant_cmd(
     **kwargs: Any,
 ) -> int:
     """
-    Reconcile and plant this machine's honeytokens against GitGuardian.
+    Detect endpoint intrusion by planting a honeytoken on this machine.
 
+    Honeytokens deployed are fully synchronized with the GitGuardian platform.
     Apply the desired on-disk state: write/refresh the decoy AWS credentials
     profile for `write` entries, remove it for `delete` (revoked) entries —
     preserving any other profiles. ggshield never revokes a honeytoken; it only
