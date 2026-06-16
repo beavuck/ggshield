@@ -269,9 +269,17 @@ def setup_truststore():
         # truststore requires Python 3.10
         return
 
-    import truststore
+    # truststore is only an optimization to use the system trust store instead
+    # of the certificates bundled by certifi. If anything goes wrong while
+    # importing or injecting it (for example truststore failing to parse the
+    # macOS version, see #1265), fall back to certifi rather than crashing the
+    # whole CLI.
+    try:
+        import truststore
 
-    truststore.inject_into_ssl()
+        truststore.inject_into_ssl()
+    except Exception as exc:
+        logger.debug("Could not set up truststore, falling back to certifi: %s", exc)
 
 
 def main(args: Optional[List[str]] = None) -> Any:
