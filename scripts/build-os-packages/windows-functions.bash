@@ -52,6 +52,13 @@ windows_build_chocolatey_package() {
     # vendored trust root, so drop them.
     rm -rf choco-package/tools/_internal/sigstore/_store/https%3A*
 
+    # Surface CCR metadata errors the push server masks as a 409 (chocolatey/home#399).
+    # Isolated + non-fatal: validate to a temp dir, then uninstall before the real pack.
+    info "Validating chocolatey package metadata (chocolatey/home#399)"
+    choco install chocolatey-community-validation.extension -y || true
+    choco pack choco-package/* --version "$VERSION" --outdir "$(mktemp -d)" || true
+    choco uninstall chocolatey-community-validation.extension -y || true
+
     choco pack choco-package/* --version $VERSION --outdir $PACKAGES_DIR
 
     info "Chocolatey package created in $PACKAGES_DIR/ggshield.$VERSION.nupkg"
