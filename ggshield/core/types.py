@@ -11,7 +11,7 @@ from ggshield.core import ui
 @marshmallow_dataclass.dataclass
 class FilteredConfig(FromDictMixin, ToDictMixin):
     @classmethod
-    @pre_load(pass_many=False)
+    @pre_load
     def filter_fields(cls, data: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
         """
         Remove and alert on unknown fields.
