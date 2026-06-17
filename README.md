@@ -23,6 +23,7 @@ Only metadata such as call time, request size and scan mode is stored from scans
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 
 - [Installation](#installation)
+  - [Install script](#install-script)
   - [macOS](#macos)
     - [Homebrew](#homebrew)
     - [Standalone .pkg package](#standalone-pkg-package)
@@ -55,6 +56,38 @@ Any change made in this section must be replicated in the "Step 1: Install
 ggshield" section of the "Getting started" page of ggshield public
 documentation.
 -->
+
+## Install script
+
+The quickest way to install `ggshield` is the install script. It detects your
+OS and architecture, installs the standalone build (no Python required), and
+can optionally authenticate and install plugins.
+
+Linux / macOS:
+
+```shell
+curl --proto '=https' --tlsv1.2 -sSfL \
+  https://raw.githubusercontent.com/GitGuardian/ggshield/main/scripts/install/install.sh | bash
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/GitGuardian/ggshield/main/scripts/install/install.ps1 | iex
+```
+
+Or, if you prefer `curl` (bundled with Windows 10+):
+
+```powershell
+curl.exe -sSL https://raw.githubusercontent.com/GitGuardian/ggshield/main/scripts/install/install.ps1 | powershell -NoProfile -ExecutionPolicy Bypass -Command -
+```
+
+The script accepts options such as `--instance` (authenticate against a
+specific instance, e.g. the EU workspace) and `--plugin` (install a plugin).
+See [`scripts/install/README.md`](scripts/install/README.md) for the full list
+of options, the other install methods, and how to uninstall.
+
+The methods below install the CLI manually instead.
 
 ## macOS
 
