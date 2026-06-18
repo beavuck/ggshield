@@ -5,7 +5,7 @@
 # Installs the standalone ggshield build into ~/.local/bin (no sudo), then
 # best-effort authenticates and installs any requested plugins.
 #
-#   curl --proto '=https' --tlsv1.2 -sSfL \
+#   curl -sSfL \
 #     https://raw.githubusercontent.com/GitGuardian/ggshield/main/scripts/install/install.sh | bash
 #
 # See scripts/install/README.md for options and other install methods.

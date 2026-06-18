@@ -7,7 +7,7 @@
 # It does not touch ggshield installed another way (Homebrew, apt/rpm, pipx,
 # uv, pip…). Pass --purge to also remove ggshield's config, cache and data.
 #
-#   curl --proto '=https' --tlsv1.2 -sSfL \
+#   curl -sSfL \
 #     https://raw.githubusercontent.com/GitGuardian/ggshield/main/scripts/install/uninstall.sh | bash
 
 set -euo pipefail

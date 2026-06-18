@@ -9,7 +9,7 @@ cleanly uninstall it later. No admin/sudo required.
 Linux / macOS:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -sSfL \
+curl -sSfL \
   https://raw.githubusercontent.com/GitGuardian/ggshield/main/scripts/install/install.sh | bash
 ```
 
@@ -26,7 +26,7 @@ requires `powershell -ExecutionPolicy Bypass -File .\install.ps1`.
 Prefer inspecting before running:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -sSfL -o install.sh \
+curl -sSfL -o install.sh \
   https://raw.githubusercontent.com/GitGuardian/ggshield/main/scripts/install/install.sh
 less install.sh
 bash install.sh
@@ -59,7 +59,7 @@ Docker image `gitguardian/ggshield` or `pipx install ggshield`.
 Pass options through the pipe with `bash -s --`:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -sSfL \
+curl -sSfL \
   https://raw.githubusercontent.com/GitGuardian/ggshield/main/scripts/install/install.sh |
   bash -s -- --plugin <plugin_name>
 ```
@@ -83,7 +83,7 @@ ggshield authenticates against the US workspace
 on Windows) to target another one — for the EU workspace:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -sSfL \
+curl -sSfL \
   https://raw.githubusercontent.com/GitGuardian/ggshield/main/scripts/install/install.sh |
   bash -s -- --instance https://dashboard.eu1.gitguardian.com
 ```
@@ -131,7 +131,7 @@ trust boundary matters.
 Linux / macOS:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -sSfL \
+curl -sSfL \
   https://raw.githubusercontent.com/GitGuardian/ggshield/main/scripts/install/uninstall.sh | bash
 ```
 

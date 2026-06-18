@@ -66,7 +66,7 @@ can optionally authenticate and install plugins.
 Linux / macOS:
 
 ```shell
-curl --proto '=https' --tlsv1.2 -sSfL \
+curl -sSfL \
   https://raw.githubusercontent.com/GitGuardian/ggshield/main/scripts/install/install.sh | bash
 ```
 
