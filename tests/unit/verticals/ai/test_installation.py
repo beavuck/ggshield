@@ -13,6 +13,7 @@ from ggshield.verticals.ai.agents import Claude, Codex, Copilot, Cursor
 from ggshield.verticals.ai.installation import (
     InstallationStats,
     _fill_dict,
+    are_hooks_installed_globally,
     build_hook_command,
     install_hooks,
 )
@@ -140,7 +141,9 @@ class TestFillDict:
             config, template, COMMAND, overwrite=True, stats=stats, locator=_locator
         )
         assert config == expected
-        assert stats == InstallationStats(added=1, already_present=1)
+        assert stats == InstallationStats(
+            added=1, already_present=1, command="ggshield already"
+        )
 
     def test_list_match_found_leaves_existing_object_overwrite_false(self):
         """When locator finds a match in list and overwrite is False, existing value is kept."""
@@ -152,7 +155,9 @@ class TestFillDict:
             config, template, COMMAND, overwrite=False, stats=stats, locator=_locator
         )
         assert config == expected
-        assert stats == InstallationStats(added=0, already_present=1)
+        assert stats == InstallationStats(
+            added=0, already_present=1, command="ggshield already"
+        )
 
     def test_multiple_lists(self):
         config = {
@@ -181,7 +186,9 @@ class TestFillDict:
             config, template, COMMAND, overwrite=False, stats=stats, locator=_locator
         )
         assert config == expected
-        assert stats == InstallationStats(added=2, already_present=1)
+        assert stats == InstallationStats(
+            added=2, already_present=1, command="ggshield already"
+        )
 
     def test_template_list_must_have_exactly_one_element(self):
         """Template list value must have exactly one element (raises ValueError otherwise)."""
@@ -432,6 +439,50 @@ class TestInstallHooks:
             code = install_hooks("cursor", mode="local", force=True)
 
         assert code == 0
+
+
+class TestAreHooksInstalledGlobally:
+    """Unit tests for the are_hooks_installed_globally function."""
+
+    @patch(
+        "ggshield.verticals.ai.installation.build_hook_command", return_value=COMMAND
+    )
+    @patch("ggshield.verticals.ai.installation.get_user_home_dir")
+    def test_detects_installed_global_hooks(
+        self, mock_home: Any, mock_cmd: Any, tmp_path: Path
+    ):
+        mock_home.return_value = tmp_path
+
+        installed, command = are_hooks_installed_globally("claude-code")
+        assert installed is False
+        assert command is None
+
+        install_hooks("claude-code", mode="global")
+
+        installed, command = are_hooks_installed_globally("claude-code")
+        assert installed is True
+        assert command == COMMAND
+
+    @patch("ggshield.verticals.ai.installation.get_user_home_dir")
+    def test_no_settings_file_returns_false(self, mock_home: Any, tmp_path: Path):
+        mock_home.return_value = tmp_path
+        installed, command = are_hooks_installed_globally("cursor")
+        assert installed is False
+        assert command is None
+
+    @patch("ggshield.verticals.ai.installation.get_user_home_dir")
+    def test_settings_without_ggshield_returns_false(
+        self, mock_home: Any, tmp_path: Path
+    ):
+        mock_home.return_value = tmp_path
+        settings = tmp_path / ".cursor" / "hooks.json"
+        settings.parent.mkdir(parents=True)
+        settings.write_text(
+            json.dumps({"hooks": {"preToolUse": [{"command": "other-tool"}]}})
+        )
+        installed, command = are_hooks_installed_globally("cursor")
+        assert installed is False
+        assert command is None
 
 
 @contextlib.contextmanager

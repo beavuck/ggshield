@@ -384,3 +384,7 @@ class Agent(ABC):
                     continue
         except OSError:
             yield from []
+
+    def is_present(self) -> bool:
+        """Whether the agent is present on the machine"""
+        return self.config_folder.exists()

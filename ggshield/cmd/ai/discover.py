@@ -96,14 +96,12 @@ def discover_cmd(
 
 def _summarize_discovery(config: AIDiscovery, report: BackfillReport) -> Dict[str, Any]:
     """Summarize what we want to show of the discovery."""
-    agent_names = set()
     servers = []
     for server in config.servers:
         projects = set()
         agents = set()
         installed_globally = False
         for conf in server.configurations:
-            agent_names.add(conf.agent)
             agents.add(conf.agent)
             if conf.scope == Scope.USER:
                 installed_globally = True
@@ -120,8 +118,18 @@ def _summarize_discovery(config: AIDiscovery, report: BackfillReport) -> Dict[st
             }
         )
     servers = sorted(servers, key=lambda x: x["name"])
+    agents = sorted(
+        (
+            {
+                "name": AGENTS[agent.name].display_name,
+                "hooks_installed": agent.hooks_installed,
+            }
+            for agent in config.agents
+        ),
+        key=lambda x: x["name"],
+    )
     return {
-        "agents": [AGENTS[name].display_name for name in agent_names],
+        "agents": agents,
         "servers": servers,
         "history": {
             "parsed": report.parsed,
@@ -134,7 +142,7 @@ def _summarize_discovery(config: AIDiscovery, report: BackfillReport) -> Dict[st
 
 def print_summary(summary: Dict[str, Any]) -> None:
     """Print the summary of the discovery."""
-    agents: List[str] = summary.get("agents", [])
+    agents: List[Dict[str, Any]] = summary.get("agents", [])
     servers: List[Dict[str, Any]] = summary.get("servers", [])
 
     nb_servers = len(servers)
@@ -144,9 +152,14 @@ def print_summary(summary: Dict[str, Any]) -> None:
         click.echo(format_text("No MCP servers discovered", STYLE["no_secret"]))
         return
 
+    def _format_agent(agent: Dict[str, Any]) -> str:
+        name = format_text(agent.get("name", "unknown"), STYLE["heading"])
+        status = "hooks installed" if agent.get("hooks_installed") else "no hooks"
+        return f"{name} ({status})"
+
     click.echo(
         f"\n{format_text('Agents discovered:', STYLE['key'])} "
-        f"{', '.join(format_text(agent, STYLE['heading']) for agent in agents) if agents else 'none'} "
+        f"{', '.join(_format_agent(agent) for agent in agents) if agents else 'none'} "
         f"({nb_agents} {pluralize('agent', nb_agents)})"
     )
     click.echo(

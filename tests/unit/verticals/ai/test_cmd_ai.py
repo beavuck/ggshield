@@ -4,7 +4,13 @@ from unittest.mock import MagicMock, patch
 
 import click
 from click.testing import CliRunner
-from pygitguardian.models import AIDiscovery, MCPConfiguration, MCPServer, UserInfo
+from pygitguardian.models import (
+    AgentInfo,
+    AIDiscovery,
+    MCPConfiguration,
+    MCPServer,
+    UserInfo,
+)
 
 from ggshield.__main__ import cli
 from ggshield.cmd.ai.discover import print_summary
@@ -30,8 +36,16 @@ def _user():
     )
 
 
-def _discovery(servers: Optional[List[MCPServer]] = None):
-    return AIDiscovery(user=_user(), servers=servers or [], discovery_duration=0.1)
+def _discovery(
+    servers: Optional[List[MCPServer]] = None,
+    agents: Optional[List[AgentInfo]] = None,
+):
+    return AIDiscovery(
+        user=_user(),
+        servers=servers or [],
+        agents=agents or [],
+        discovery_duration=0.1,
+    )
 
 
 def _server(
@@ -372,7 +386,8 @@ class TestDiscoverCmd:
                         _config(agent="cursor", scope=Scope.USER),
                     ],
                 ),
-            ]
+            ],
+            agents=[AgentInfo(name="cursor", hooks_installed=True)],
         )
         mock_discover.return_value = discovery
         mock_submit.return_value = discovery
@@ -382,7 +397,7 @@ class TestDiscoverCmd:
 
         assert result.exit_code == 0
         parsed = json.loads(result.output)
-        assert parsed["agents"] == ["Cursor"]
+        assert parsed["agents"] == [{"name": "Cursor", "hooks_installed": True}]
         assert len(parsed["servers"]) == 1
         assert parsed["servers"][0]["name"] == "My MCP"
         assert parsed["servers"][0]["installed_globally"] is True
@@ -505,7 +520,7 @@ class TestPrintSummary:
 
     def test_single_global_server(self):
         summary: Dict[str, Any] = {
-            "agents": ["Cursor"],
+            "agents": [{"name": "Cursor", "hooks_installed": True}],
             "servers": [
                 {
                     "name": "my-server",
@@ -523,10 +538,32 @@ class TestPrintSummary:
         assert "1 agent" in result.output
         assert "my-server" in result.output
         assert "Scope: user" in result.output
+        assert "hooks installed" in result.output
+
+    def test_agent_without_hooks_shows_no_hooks(self):
+        summary: Dict[str, Any] = {
+            "agents": [{"name": "Cursor", "hooks_installed": False}],
+            "servers": [
+                {
+                    "name": "my-server",
+                    "installed_globally": True,
+                    "projects": [],
+                }
+            ],
+        }
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            result = runner.invoke(
+                _echo_summary_cmd, args=[], input=json.dumps(summary)
+            )
+        assert "no hooks" in result.output
 
     def test_multiple_servers_with_projects(self):
         summary: Dict[str, Any] = {
-            "agents": ["Cursor", "Claude Code"],
+            "agents": [
+                {"name": "Cursor", "hooks_installed": True},
+                {"name": "Claude Code", "hooks_installed": False},
+            ],
             "servers": [
                 {
                     "name": "server-a",

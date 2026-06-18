@@ -69,10 +69,18 @@ class TestMergeMcpConfigurations:
 
 
 class TestDiscoverAIConfiguration:
+    @patch(
+        "ggshield.verticals.ai.discovery.are_hooks_installed_globally",
+        return_value=(False, None),
+    )
     @patch("ggshield.verticals.ai.discovery.get_user_info", return_value=_user())
     @patch("ggshield.verticals.ai.discovery.AGENTS")
     def test_aggregates_agents(
-        self, mock_agents: MagicMock, mock_user_info: MagicMock, tmp_path: Path
+        self,
+        mock_agents: MagicMock,
+        mock_user_info: MagicMock,
+        mock_hooks: MagicMock,
+        tmp_path: Path,
     ):
         agent1 = MagicMock()
         agent1.discover_project_directories.return_value = iter([tmp_path / "p1"])
@@ -92,10 +100,53 @@ class TestDiscoverAIConfiguration:
         assert len(result.servers) == 2
         assert result.discovery_duration > 0
 
+    @patch("ggshield.verticals.ai.discovery.are_hooks_installed_globally")
+    @patch("ggshield.verticals.ai.discovery.get_user_info", return_value=_user())
+    @patch("ggshield.verticals.ai.discovery.AGENTS")
+    def test_reports_present_agents_hook_status(
+        self,
+        mock_agents: MagicMock,
+        mock_user_info: MagicMock,
+        mock_hooks: MagicMock,
+    ):
+        # Present agent, hooks installed
+        agent1 = MagicMock()
+        agent1.name = "cursor"
+        agent1.discover_project_directories.return_value = iter([])
+        agent1.discover_mcp_configurations.return_value = []
+        agent1.discover_capabilities.return_value = False
+        agent1.is_present.return_value = True
+
+        # Not present: must not appear in the agents list
+        agent2 = MagicMock()
+        agent2.name = "claude-code"
+        agent2.discover_project_directories.return_value = iter([])
+        agent2.discover_mcp_configurations.return_value = []
+        agent2.discover_capabilities.return_value = False
+        agent2.is_present.return_value = False
+
+        mock_agents.values.return_value = [agent1, agent2]
+        mock_hooks.side_effect = lambda name: {
+            "cursor": (True, "ggshield secret scan ai-hook"),
+        }.get(name, (False, None))
+
+        result = discover_ai_configuration()
+
+        assert [
+            (a.name, a.hooks_installed, a.hooks_command) for a in result.agents
+        ] == [("cursor", True, "ggshield secret scan ai-hook")]
+
+    @patch(
+        "ggshield.verticals.ai.discovery.are_hooks_installed_globally",
+        return_value=(False, None),
+    )
     @patch("ggshield.verticals.ai.discovery.get_user_info", return_value=_user())
     @patch("ggshield.verticals.ai.discovery.AGENTS")
     def test_stops_capability_discovery_at_first_success(
-        self, mock_agents: MagicMock, mock_user_info: MagicMock
+        self,
+        mock_agents: MagicMock,
+        mock_user_info: MagicMock,
+        mock_hooks: MagicMock,
     ):
         agent1 = MagicMock()
         agent1.discover_project_directories.return_value = iter([])
