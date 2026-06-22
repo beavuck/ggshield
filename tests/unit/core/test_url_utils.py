@@ -1,7 +1,12 @@
 import pytest
 from click import UsageError
 
-from ggshield.core.url_utils import api_to_dashboard_url, dashboard_to_api_url, urljoin
+from ggshield.core.url_utils import (
+    api_to_dashboard_url,
+    dashboard_to_api_url,
+    is_saas_netloc,
+    urljoin,
+)
 
 
 @pytest.mark.parametrize(
@@ -19,6 +24,11 @@ from ggshield.core.url_utils import api_to_dashboard_url, dashboard_to_api_url, 
         [
             "https://selfhosted.gitguardian.tech/exposed",
             "https://selfhosted.gitguardian.tech",
+        ],
+        # Prefixed SaaS host (api-<id>): host swap, no /exposed.
+        [
+            "https://api-1234.example.gitguardian.tech",
+            "https://dashboard-1234.example.gitguardian.tech",
         ],
         ["https://example.com/exposed", "https://example.com"],
         ["https://example.com/exposed/", "https://example.com"],
@@ -55,6 +65,11 @@ def test_api_to_dashboard_url(api_url, dashboard_url):
             "https://selfhosted.gitguardian.tech",
             "https://selfhosted.gitguardian.tech/exposed",
         ],
+        # Prefixed SaaS host (dashboard-<id>): host swap, no /exposed.
+        [
+            "https://dashboard-1234.example.gitguardian.tech",
+            "https://api-1234.example.gitguardian.tech",
+        ],
         ["https://example.com/", "https://example.com/exposed"],
         ["https://example.com/", "https://example.com/exposed"],
         [
@@ -90,6 +105,29 @@ def test_unexpected_path_api_url(api_url):
 def test_unexpected_path_dashboard_url(dashboard_url):
     with pytest.raises(UsageError, match="got an unexpected path"):
         api_to_dashboard_url(dashboard_url)
+
+
+@pytest.mark.parametrize(
+    ["netloc", "expected"],
+    [
+        # Bare dashboard/api hosts under a gitguardian domain are SaaS.
+        ("dashboard.gitguardian.com", True),
+        ("api.gitguardian.com", True),
+        ("dashboard.staging.gitguardian.tech", True),
+        # Prefixed dashboard-<id>/api-<id> first labels are SaaS too.
+        ("dashboard-1234.example.gitguardian.tech", True),
+        ("api-1234.example.gitguardian.tech", True),
+        # Self-hosted instance under a gitguardian domain is NOT SaaS.
+        ("selfhosted.gitguardian.tech", False),
+        # "dashboard" must be a whole label, not a prefix of a longer word.
+        ("dashboarding.gitguardian.tech", False),
+        # Hosts outside the gitguardian domains are never SaaS.
+        ("dashboard.example.com", False),
+        ("example.com", False),
+    ],
+)
+def test_is_saas_netloc(netloc, expected):
+    assert is_saas_netloc(netloc) is expected
 
 
 def test_urljoin_empty_base_raises_value_error():
