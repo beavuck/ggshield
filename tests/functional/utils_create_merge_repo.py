@@ -45,6 +45,10 @@ LINE_VARIATION = 20
 
 SECRET_SUFFIX_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789"
 
+# Dedicated RNG so generating a repo never mutates the global random state
+# (which would leak into other tests). Seeded per call for reproducibility.
+_rng = random.Random()
+
 
 class SecretLocation(str, Enum):
     NO_SECRET = "no_secret"
@@ -56,19 +60,19 @@ class SecretLocation(str, Enum):
 def generate_file(size):
     content = []
     while len(content) < size:
-        line_length = AVERAGE_LINE_LENGTH + random.randrange(
+        line_length = AVERAGE_LINE_LENGTH + _rng.randrange(
             -LINE_VARIATION, LINE_VARIATION
         )
         for _ in range(line_length):
-            content.append(chr(random.randrange(32, 127)))
+            content.append(chr(_rng.randrange(32, 127)))
         content.append("\n")
     remove_pwd = re.compile("pwd", re.IGNORECASE)
     return remove_pwd.sub("not", "".join(content))
 
 
 def generate_secret():
-    var = random.choice(["key", "token", "password"])
-    suffix = "".join(random.choice(SECRET_SUFFIX_CHARS) for _ in range(20))
+    var = _rng.choice(["key", "token", "password"])
+    suffix = "".join(_rng.choice(SECRET_SUFFIX_CHARS) for _ in range(20))
     return f"{var} = 'glpat-{suffix}'"
 
 
@@ -76,7 +80,7 @@ def plant_secret(path, secret):
 
     lines = path.read_text().splitlines()
 
-    idx = random.randrange(len(lines))
+    idx = _rng.randrange(len(lines))
     lines.insert(idx, secret)
 
     path.write_text("\n".join(lines))
@@ -94,13 +98,13 @@ def generate_commit(
 ):
     content = generate_file(file_size)
     for idx in range(nb_files):
-        Path(root_dir / f"{file_prefix}-{random.randrange(10000)}").write_text(content)
+        Path(root_dir / f"{file_prefix}-{_rng.randrange(10000)}").write_text(content)
 
     # Plant secrets
     files = list(Path(root_dir).glob(f"{file_prefix}-*"))
     for _ in range(nb_secrets):
         while True:
-            path = random.choice(files)
+            path = _rng.choice(files)
             if not path.is_dir():
                 break
         secret = generate_secret()
@@ -122,7 +126,11 @@ def generate_repo_with_merge_commit(
     with_conflict: bool = False,
     secret_location: SecretLocation = SecretLocation.NO_SECRET,
     scan_all_merge_files: bool = False,
+    seed: Optional[int] = 1,
 ) -> None:
+    # Seed our private RNG so the generated repo is reproducible (pass seed=None
+    # for entropy). Fixed by default to keep the merge-commit tests deterministic.
+    _rng.seed(seed)
     Path(root_dir).mkdir(parents=True, exist_ok=True)
     repo = Repository.create(root_dir, initial_branch="master")
     # First commit, on master no secrets
@@ -155,7 +163,7 @@ def generate_repo_with_merge_commit(
 
     repo.checkout("feature_branch")
     # Additional commit, on feature_branch with secrets
-    files_with_conflict = [random.choice(files_last_commit)] if with_conflict else []
+    files_with_conflict = [_rng.choice(files_last_commit)] if with_conflict else []
     print(f"Files with conflict: {files_with_conflict}")
     generate_commit(
         repo,
@@ -255,6 +263,7 @@ def main():
         args.count,
         args.with_conflict,
         args.secret_location,
+        seed=None,
     )
 
     return 0
