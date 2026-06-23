@@ -13,6 +13,11 @@
 
 set -euo pipefail
 
+# Every install path (and every PATH hint) is derived from $HOME; fail early
+# with a clear message rather than building paths like /.local/bin under set -u.
+# die() is not defined yet, so emit raw.
+[ -n "${HOME:-}" ] || { printf '\033[1;31merror:\033[0m HOME is not set\n' >&2; exit 1; }
+
 GITHUB_REPO="GitGuardian/ggshield"
 DEFAULT_INSTANCE="https://dashboard.gitguardian.com"
 EU_INSTANCE="https://dashboard.eu1.gitguardian.com"
@@ -25,6 +30,9 @@ STATE_FILE="$STATE_DIR/state"
 
 ASSUME_YES=0
 INSTALL_ONLY=0
+# Set when BIN_DIR is not on PATH, so the final summary can tell the user how to
+# expose it (see emit_path_hint).
+PATH_NEEDS_SETUP=0
 PLUGINS=()
 # honor GITGUARDIAN_INSTANCE like ggshield does; --instance overrides it
 INSTANCE="${GITGUARDIAN_INSTANCE:-}"
@@ -269,12 +277,11 @@ other install methods in scripts/install/README.md" ;;
     fi
     ln -sf "$bin" "$BIN_DIR/ggshield"
 
+    # Defer the "not on PATH" guidance to the very end (emit_path_hint) so it is
+    # the last thing the user sees, not buried before the auth/plugin output.
     case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
-    *)
-        warn "$BIN_DIR is not in your PATH. Add this to your shell profile:"
-        warn "  export PATH=\"$BIN_DIR:\$PATH\""
-        ;;
+    *) PATH_NEEDS_SETUP=1 ;;
     esac
     GGSHIELD="$BIN_DIR/ggshield"
 }
@@ -314,6 +321,51 @@ emit_auth_hint() {
 emit_plugin_hint() {
     [ ${#PLUGINS[@]} -gt 0 ] &&
         printf '    ggshield plugin install %s\n' "${PLUGINS[*]}"
+    return 0
+}
+
+# ~/.local/bin is the no-sudo convention, but it is not guaranteed to be on
+# PATH: macOS never adds it, and Debian/Ubuntu add it from ~/.profile only when
+# the directory already exists at login — so a brand-new install often needs a
+# shell restart. No sudo-less directory is on PATH across every distro and
+# macOS, so we install there and tell the user how to expose it, per shell.
+# Uses $SHELL (the login shell) rather than $0: this script always runs under
+# bash (curl | bash), which says nothing about the shell the user reopens.
+emit_path_hint() {
+    # reload defaults to `source` (zsh/bash); `.` is the POSIX form for the
+    # generic-sh fallback. Paths are double-quoted in the emitted commands so a
+    # BIN_DIR/rc with spaces still copy-pastes correctly.
+    local rc reload="source" f
+    case "$(basename "${SHELL:-sh}")" in
+    fish)
+        # fish persists PATH via universal variables — no file edit, no restart.
+        printf '    # %s is not on your PATH; add it permanently with:\n' "$BIN_DIR"
+        printf '    fish_add_path -- "%s"\n' "$BIN_DIR"
+        return 0
+        ;;
+    zsh) rc="$HOME/.zshrc" ;;
+    bash)
+        if [ "$OS" = darwin ]; then
+            # macOS Terminal runs bash as a login shell, which reads the FIRST
+            # of these that exists. Appending to ~/.bash_profile when ~/.profile
+            # is the active file would shadow it, so reuse whichever exists.
+            rc="$HOME/.bash_profile"
+            for f in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+                if [ -e "$f" ]; then rc="$f"; break; fi
+            done
+        else
+            # Linux: interactive terminals read ~/.bashrc.
+            rc="$HOME/.bashrc"
+        fi
+        ;;
+    *)
+        rc="$HOME/.profile"
+        reload="."
+        ;;
+    esac
+    printf '    # %s is not on your PATH; add it, then restart your terminal:\n' "$BIN_DIR"
+    printf '    echo '\''export PATH="%s:$PATH"'\'' >> "%s"\n' "$BIN_DIR" "$rc"
+    printf '    # (or apply it to the current shell now: %s "%s")\n' "$reload" "$rc"
     return 0
 }
 
@@ -364,6 +416,7 @@ post_install() {
         [ ${#PLUGINS[@]} -gt 0 ] &&
             warn "--plugin not installed: --install-only skips authentication; run the steps below once authenticated"
         say "ggshield is installed. To finish setup:"
+        [ "$PATH_NEEDS_SETUP" = 1 ] && emit_path_hint
         emit_auth_hint
         emit_plugin_hint
         return 0
@@ -387,12 +440,15 @@ post_install() {
         plugins_pending=1
     fi
 
-    # Only nag about next steps when something actually remains.
-    if [ "$auth_ok" = 1 ] && [ "$plugins_pending" = 0 ]; then
+    # Only nag about next steps when something actually remains. A binary the
+    # shell cannot find by name is not "ready", so PATH setup counts too.
+    if [ "$auth_ok" = 1 ] && [ "$plugins_pending" = 0 ] && [ "$PATH_NEEDS_SETUP" = 0 ]; then
         say "ggshield is ready."
         return 0
     fi
     say "To finish setup:"
+    # PATH first: the other hints below assume ggshield is callable by name.
+    [ "$PATH_NEEDS_SETUP" = 1 ] && emit_path_hint
     [ "$auth_ok" = 0 ] && emit_auth_hint
     [ "$plugins_pending" = 1 ] && emit_plugin_hint
     return 0
