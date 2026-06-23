@@ -18,6 +18,7 @@ from ggshield.core.client import (
     create_client,
     create_client_from_config,
     create_session,
+    safe_response_json,
 )
 from ggshield.core.config import Config, InstanceConfig
 from ggshield.core.errors import APIKeyCheckError, UnexpectedError
@@ -363,7 +364,7 @@ class OAuthClient:
         ).get(endpoint="token")
         if not response.ok:
             raise OAuthError("The created token is invalid.")
-        return response.json()
+        return safe_response_json(response)
 
     def _save_token(self, api_token_data: Dict[str, Any]) -> None:
         """
@@ -543,6 +544,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             # escapes this handler thread is swallowed by socketserver, leaving
             # the main thread to mistake the callback for a success.
             self._handle_error(error.message)
+        except Exception as error:
+            # Catch-all for the same reason: any exception escaping this handler
+            # thread (e.g. a network error or a KeyError on a malformed body) is
+            # swallowed by socketserver and would be misread as a success.
+            self._handle_error(str(error))
         else:
             self._redirect(
                 urljoin(self.oauth_client.dashboard_url, "authenticated"),

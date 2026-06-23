@@ -3,14 +3,16 @@ from unittest import mock
 
 import jsonschema
 import pytest
+import requests.exceptions
 from pygitguardian.models import APITokensResponse, Detail, HealthCheckResponse
 from pytest_voluptuous import S
 from voluptuous.validators import All, In, Match
 
 from ggshield.__main__ import cli
 from ggshield.core.config.config import ConfigSource
+from ggshield.core.errors import ExitCode
 from ggshield.utils.os import cd
-from tests.unit.conftest import assert_invoke_ok, my_vcr
+from tests.unit.conftest import assert_invoke_exited_with, assert_invoke_ok, my_vcr
 
 
 def test_quota(cli_fs_runner, quota_json_schema):
@@ -238,3 +240,32 @@ def test_api_status_scopes_omitted_on_error(
     assert_invoke_ok(result)
     assert "Token scopes:" not in result.output
     assert "Workspace ID:" not in result.output
+
+
+@mock.patch(
+    "pygitguardian.GGClient.api_tokens",
+    side_effect=requests.exceptions.JSONDecodeError(
+        "Expecting value: line 1 column 1 (char 0)",
+        "<!doctype html><html><body>GitGuardian</body></html>",
+        0,
+    ),
+)
+@mock.patch(
+    "pygitguardian.GGClient.health_check",
+    return_value=HealthCheckResponse(detail="Valid API key.", status_code=200),
+)
+def test_api_status_reports_clean_error_on_non_json_body(
+    health_check_mock, api_tokens_mock, cli_fs_runner
+):
+    """
+    GIVEN an instance URL that returns a non-JSON 2xx body (e.g. the SPA HTML),
+        so api_tokens() would raise a raw JSONDecodeError
+    WHEN running api-status
+    THEN the command fails with a clean, actionable error mentioning the
+        instance URL, not a raw JSONDecodeError traceback
+    """
+    result = cli_fs_runner.invoke(cli, ["api-status"], color=False)
+
+    assert_invoke_exited_with(result, ExitCode.UNEXPECTED_ERROR)
+    assert "instance URL" in result.output
+    assert not isinstance(result.exception, requests.exceptions.JSONDecodeError)
