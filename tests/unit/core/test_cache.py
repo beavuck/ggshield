@@ -14,6 +14,17 @@ from ggshield.utils.os import cd
 from tests.repository import Repository
 
 
+@pytest.fixture(autouse=True)
+def _isolate_cache_path():
+    """Opt out of conftest's CACHE_PATH redirection.
+
+    These tests exercise Cache's path/gitignore behaviour and manage the cache
+    location themselves (via isolated_fs or cd into tmp_path), so the default
+    relative ``./.cache_ggshield`` must be kept.
+    """
+    yield
+
+
 @pytest.mark.usefixtures("isolated_fs")
 class TestCache:
     def test_defaults(self):

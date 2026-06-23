@@ -723,8 +723,11 @@ def no_api_key(monkeypatch):
     monkeypatch.delenv("GITGUARDIAN_API_KEY", raising=False)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture()
 def cache() -> Cache:
+    # Function-scoped so it is built after _isolate_cache_path has redirected
+    # CACHE_PATH into the test's tmp_path (a session cache would write the
+    # shared .cache_ggshield into the CWD).
     c = Cache()
     c.purge()
     return c
@@ -824,6 +827,18 @@ def clear_cache():
     _get_git_path.cache_clear()
     _git_rev_parse_absolute.cache_clear()
     read_git_file.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_cache_path(monkeypatch, tmp_path):
+    """Point the secrets cache into the test's tmp_path.
+
+    Without this, ``Cache()`` writes ``.cache_ggshield`` relative to the CWD,
+    which all xdist workers share, leading to interleaved/corrupted JSON.
+    """
+    monkeypatch.setattr(
+        "ggshield.core.cache.CACHE_PATH", str(tmp_path / ".cache_ggshield")
+    )
 
 
 @pytest.fixture(autouse=True)
