@@ -2,6 +2,7 @@ from unittest.mock import Mock
 from urllib import parse as urlparse
 
 import pytest
+import requests.exceptions
 
 from ggshield.core.config import Config
 from ggshield.core.errors import UnexpectedError
@@ -121,6 +122,40 @@ def test_request_handler_records_unexpected_error(monkeypatch):
 
     assert client._request_finished is True
     assert client._request_error_message == error_message
+
+
+def test_request_handler_records_arbitrary_exception(monkeypatch):
+    """
+    GIVEN a localhost OAuth callback whose processing raises an exception that
+          is neither OAuthError nor UnexpectedError (e.g. a network error, or a
+          KeyError on a malformed-but-valid-JSON body)
+    WHEN the local request handler processes the callback
+    THEN the error is still recorded on the client instead of escaping the
+         handler thread — socketserver would otherwise swallow it and
+         _wait_for_callback() would report a misleading success
+    """
+    client = OAuthClient(Config(), "https://dashboard.gitguardian.com")
+    error_message = "Connection reset by peer"
+
+    def raise_arbitrary(_callback_url):
+        raise requests.exceptions.ConnectionError(error_message)
+
+    monkeypatch.setattr(client, "process_callback", raise_arbitrary)
+
+    handler = RequestHandler.__new__(RequestHandler)
+    handler.oauth_client = client
+    handler.path = "/?code=some_code&state=some_state"
+    handler.send_response = Mock()
+    handler.send_header = Mock()
+    handler.end_headers = Mock()
+    handler.wfile = Mock()
+
+    # The handler must not let the exception escape the request thread.
+    handler.do_GET()
+
+    assert client._request_finished is True
+    assert client._request_error_message is not None
+    assert error_message in client._request_error_message
 
 
 def test_print_login_success_without_account_raises_cleanly():
