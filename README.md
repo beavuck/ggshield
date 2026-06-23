@@ -31,6 +31,7 @@ Only metadata such as call time, request size and scan mode is stored from scans
     - [Deb and RPM packages](#deb-and-rpm-packages)
   - [Windows](#windows)
     - [Chocolatey](#chocolatey)
+    - [MSI installer](#msi-installer)
     - [Standalone .zip archive](#standalone-zip-archive)
   - [All operating systems](#all-operating-systems)
     - [Using pipx](#using-pipx)
@@ -128,6 +129,14 @@ Upgrading is handled by the package manager.
 
 ```shell
 choco install ggshield
+```
+
+### MSI installer
+
+Download the MSI installer from the [`ggshield` release page](https://github.com/GitGuardian/ggshield/releases) and install it:
+
+```powershell
+msiexec /i ggshield-VERSION-x86_64-pc-windows-msvc.msi
 ```
 
 ### Standalone .zip archive
