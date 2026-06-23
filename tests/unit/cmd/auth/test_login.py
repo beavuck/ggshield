@@ -47,6 +47,7 @@ VALID_TOKEN_RESPONSE = create_json_response(
             "scan",
             "honeytokens:check",
             "endpoints:send",
+            "ai-agent:send",
         ],
         "expire_at": None,
     }
@@ -77,6 +78,7 @@ VALID_API_TOKENS_RESPONSE = create_json_response(
             "scan",
             "honeytokens:check",
             "endpoints:send",
+            "ai-agent:send",
         ],
     }
 )
@@ -699,6 +701,7 @@ class TestAuthLoginWeb:
                 "honeytokens:write",
                 "honeytokens:check",
                 "endpoints:send",
+                "ai-agent:send",
                 "teams:read",
             }
         )
@@ -931,6 +934,7 @@ class TestAuthLoginWeb:
                 "scan",
                 "honeytokens:check",
                 "endpoints:send",
+                "ai-agent:send",
             }
 
         (url,), kwargs = self._webbrowser_open_mock.call_args_list[0]
