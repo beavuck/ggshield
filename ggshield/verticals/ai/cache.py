@@ -45,6 +45,10 @@ def has_changed_from(current: AIDiscovery, other: AIDiscovery) -> bool:
     if current.user != other.user:
         return True
 
+    # 1b. agent hook installation status
+    if current.agents != other.agents:
+        return True
+
     # 2. MCP configurations should be the same (both in number and content)
     other_configurations = _confs_by_key(other)
     new_configurations = _confs_by_key(current)

@@ -8,12 +8,13 @@ from time import perf_counter
 from typing import Dict, List, Optional
 
 from pygitguardian import GGClient
-from pygitguardian.models import AIDiscovery, Detail, MCPServer
+from pygitguardian.models import AgentInfo, AIDiscovery, Detail, MCPServer
 
 from ggshield.core.errors import UnexpectedError
 
 from .agents import AGENTS
 from .cache import has_changed_from, load_discovery_cache, save_discovery_cache
+from .installation import are_hooks_installed_globally
 from .models import MCPConfiguration
 from .user import get_user_info
 
@@ -58,6 +59,19 @@ def discover_ai_configuration(machine_id: Optional[str] = None) -> AIDiscovery:
     for agent in AGENTS.values():
         mcp_configurations.extend(agent.discover_mcp_configurations(projects))
 
+    # Hook installation status
+    agents = []
+    for agent in AGENTS.values():
+        if agent.is_present():
+            installed, command = are_hooks_installed_globally(agent.name)
+            agents.append(
+                AgentInfo(
+                    name=agent.name,
+                    hooks_installed=installed,
+                    hooks_command=command,
+                )
+            )
+
     # Merge MCP configurations into servers
     servers = _merge_mcp_configurations(mcp_configurations)
 
@@ -74,6 +88,7 @@ def discover_ai_configuration(machine_id: Optional[str] = None) -> AIDiscovery:
     return AIDiscovery(
         user=user,
         servers=servers,
+        agents=agents,
         discovery_duration=discovery_duration,
     )
 

@@ -5,20 +5,29 @@ import sys
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
 import click
 
 from ggshield.core.dirs import get_user_home_dir
 from ggshield.core.errors import UnexpectedError
 
-from .agents import AGENTS
+from .agents import AGENTS, Agent
 
 
 @dataclass
 class InstallationStats:
-    added: int
-    already_present: int
+    added: int = 0
+    already_present: int = 0
+    command: str = ""
+
+
+@dataclass
+class BuildConfigResult:
+    agent: Agent
+    settings_path: Path
+    new_config: Dict[str, Any]
+    stats: InstallationStats
 
 
 def build_hook_command() -> str:
@@ -64,6 +73,43 @@ def install_hooks(
     Returns an error code (0 on success, 1 on failure)
     """
 
+    result = build_hook_config(name, mode, force)
+    settings_path = result.settings_path
+    new_config = result.new_config
+    stats = result.stats
+    display_name = result.agent.display_name
+    # Ensure parent directory exists
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write the updated config
+    with settings_path.open("w", encoding="utf-8") as f:
+        json.dump(new_config, f, indent=2)
+        f.write("\n")
+
+    # Report what happened
+    styled_path = click.style(settings_path, fg="yellow", bold=True)
+    if stats.added == 0 and stats.already_present > 0:
+        click.echo(f"{display_name} hooks already installed in {styled_path}")
+    elif stats.added > 0 and stats.already_present > 0:
+        click.echo(f"{display_name} hooks updated in {styled_path}")
+    else:
+        click.echo(f"{display_name} hooks successfully added in {styled_path}")
+
+    return 0
+
+
+def build_hook_config(
+    name: str, mode: Literal["local", "global"], force: bool = False
+) -> BuildConfigResult:
+    """Build the hook configuration for the AI hook.
+
+    Args:
+        name: Name of the AI coding tool
+        mode: Mode of the hook installation
+
+    Returns the updated hook configuration and statistics
+    """
+
     try:
         agent = AGENTS[name]
     except KeyError:
@@ -91,6 +137,7 @@ def install_hooks(
     stats = InstallationStats(
         added=0,
         already_present=0,
+        command="",
     )
 
     stats = _fill_dict(
@@ -102,24 +149,12 @@ def install_hooks(
         locator=agent.settings_locate,
     )
 
-    # Ensure parent directory exists
-    settings_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write the updated config
-    with settings_path.open("w", encoding="utf-8") as f:
-        json.dump(existing_config, f, indent=2)
-        f.write("\n")
-
-    # Report what happened
-    styled_path = click.style(settings_path, fg="yellow", bold=True)
-    if stats.added == 0 and stats.already_present > 0:
-        click.echo(f"{agent.display_name} hooks already installed in {styled_path}")
-    elif stats.added > 0 and stats.already_present > 0:
-        click.echo(f"{agent.display_name} hooks updated in {styled_path}")
-    else:
-        click.echo(f"{agent.display_name} hooks successfully added in {styled_path}")
-
-    return 0
+    return BuildConfigResult(
+        agent=agent,
+        settings_path=settings_path,
+        new_config=existing_config,
+        stats=stats,
+    )
 
 
 def _fill_dict(
@@ -172,8 +207,10 @@ def _fill_dict(
             if key not in config:
                 config[key] = value
             # for stats
-            if "ggshield" in str(config.get(key, "")):
+            cmd = config.get(key, "")
+            if isinstance(cmd, str) and "ggshield" in cmd:
                 stats.already_present += 1
+                stats.command = cmd
             # Update if needed
             if overwrite:
                 config[key] = value
@@ -182,3 +219,12 @@ def _fill_dict(
                 stats.added += 1
 
     return stats
+
+
+def are_hooks_installed_globally(agent_name: str) -> Tuple[bool, Optional[str]]:
+    """Whether the ggshield AI hooks are installed in this agent's global settings file."""
+    result = build_hook_config(agent_name, "global")
+    return (
+        result.stats.added == 0,
+        result.stats.command if result.stats.added == 0 else None,
+    )

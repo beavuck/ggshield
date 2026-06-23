@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from pygitguardian.models import (
+    AgentInfo,
     AIDiscovery,
     MCPConfiguration,
     MCPPromptInfo,
@@ -196,6 +197,39 @@ class TestAIDiscoveryHasChangedFrom:
     def test_empty_servers_returns_false(self):
         a = AIDiscovery(user=_user(), servers=[], discovery_duration=0.1)
         b = AIDiscovery(user=_user(), servers=[], discovery_duration=0.1)
+        assert has_changed_from(a, b) is False
+
+    def test_changed_hook_installation_returns_true(self):
+        cfg = _cfg()
+        a = AIDiscovery(
+            user=_user(),
+            servers=[_server(configurations=[cfg])],
+            agents=[AgentInfo(name="cursor", hooks_installed=True)],
+            discovery_duration=0.1,
+        )
+        b = AIDiscovery(
+            user=_user(),
+            servers=[_server(configurations=[cfg])],
+            agents=[AgentInfo(name="cursor", hooks_installed=False)],
+            discovery_duration=0.1,
+        )
+        assert has_changed_from(a, b) is True
+
+    def test_same_hook_installation_returns_false(self):
+        cfg = _cfg()
+        agents = [AgentInfo(name="cursor", hooks_installed=True)]
+        a = AIDiscovery(
+            user=_user(),
+            servers=[_server(configurations=[cfg])],
+            agents=agents,
+            discovery_duration=0.1,
+        )
+        b = AIDiscovery(
+            user=_user(),
+            servers=[_server(configurations=[cfg])],
+            agents=list(agents),
+            discovery_duration=0.2,
+        )
         assert has_changed_from(a, b) is False
 
 

@@ -12,7 +12,7 @@ from ggshield.cmd.utils.common_options import (
     text_json_format_option,
 )
 from ggshield.cmd.utils.context_obj import ContextObj
-from ggshield.core.client import create_client_from_config
+from ggshield.core.client import create_client_from_config, safe_api_tokens
 from ggshield.core.errors import UnexpectedError
 from ggshield.core.text_utils import STYLE, format_text
 
@@ -34,7 +34,7 @@ def status_cmd(ctx: click.Context, **kwargs: Any) -> int:
 
     token_scopes: Optional[List[str]] = None
     workspace_id: Optional[int] = None
-    token_response = client.api_tokens()
+    token_response = safe_api_tokens(client)
     if isinstance(token_response, APITokensResponse):
         token_scopes = token_response.scopes
         workspace_id = token_response.workspace_id

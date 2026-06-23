@@ -20,6 +20,7 @@ from ggshield.core.client import (
     check_client_api_key,
     create_client_from_config,
     create_session,
+    safe_api_tokens,
 )
 from ggshield.core.config import Config
 from ggshield.core.errors import (
@@ -157,6 +158,85 @@ def test_check_client_api_key_with_source_uuid_unexpected_response():
     client_mock.api_tokens.return_value = "unexpected_response_type"
 
     with pytest.raises(UnexpectedError, match="Unexpected api_tokens response"):
+        check_client_api_key(client_mock, {TokenScope.SCAN_CREATE_INCIDENTS})
+
+
+# Body the dashboard SPA serves when the API URL is wrong (a 2xx with HTML).
+_NON_JSON_BODY = "<!doctype html><html><body>GitGuardian</body></html>"
+
+
+def _json_decode_error() -> requests.exceptions.JSONDecodeError:
+    """Build the error requests' Response.json() raises on a non-JSON body."""
+    return requests.exceptions.JSONDecodeError(
+        "Expecting value: line 1 column 1 (char 0)", _NON_JSON_BODY, 0
+    )
+
+
+def test_safe_api_tokens_passes_through_token_response():
+    """
+    GIVEN api_tokens() returning a valid APITokensResponse
+    WHEN safe_api_tokens() is called
+    THEN the response is returned unchanged
+    """
+    client_mock = _make_client_mock()
+    response = APITokensResponse.from_dict(
+        {
+            "id": "5ddaad0c-5a0c-4674-beb5-1cd198d13360",
+            "name": "test-name",
+            "workspace_id": 1,
+            "type": "personal_access_token",
+            "status": "active",
+            "created_at": "2023-01-01T00:00:00Z",
+            "scopes": [TokenScope.SCAN_CREATE_INCIDENTS.value],
+        }
+    )
+    client_mock.api_tokens.return_value = response
+
+    assert safe_api_tokens(client_mock) is response
+
+
+def test_safe_api_tokens_passes_through_detail():
+    """
+    GIVEN api_tokens() returning an error Detail (e.g. 401)
+    WHEN safe_api_tokens() is called
+    THEN the Detail is returned unchanged (callers keep their own handling)
+    """
+    client_mock = _make_client_mock()
+    detail = Detail("Unauthorized", 401)
+    client_mock.api_tokens.return_value = detail
+
+    assert safe_api_tokens(client_mock) is detail
+
+
+def test_safe_api_tokens_non_json_body_raises_clean_error():
+    """
+    GIVEN api_tokens() raising a raw JSONDecodeError on a non-JSON 2xx body
+    WHEN safe_api_tokens() is called
+    THEN it raises a clean UnexpectedError naming the instance URL,
+        not the raw JSONDecodeError
+    """
+    client_mock = _make_client_mock()
+    client_mock.api_tokens.side_effect = _json_decode_error()
+
+    with pytest.raises(UnexpectedError) as exc_info:
+        safe_api_tokens(client_mock)
+
+    message = str(exc_info.value)
+    assert client_mock.base_uri in message
+    assert "instance URL" in message
+
+
+def test_check_client_api_key_non_json_body_raises_clean_error():
+    """
+    GIVEN a valid API key but api_tokens() hitting a non-JSON 2xx body
+    WHEN check_client_api_key() is called with a required scope
+    THEN it raises a clean UnexpectedError instead of crashing with JSONDecodeError
+    """
+    client_mock = _make_client_mock()
+    client_mock.read_metadata.return_value = None  # Success
+    client_mock.api_tokens.side_effect = _json_decode_error()
+
+    with pytest.raises(UnexpectedError, match="instance URL"):
         check_client_api_key(client_mock, {TokenScope.SCAN_CREATE_INCIDENTS})
 
 

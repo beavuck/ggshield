@@ -18,10 +18,17 @@ def is_saas_netloc(netloc: str) -> bool:
     API URLs. Self-hosted instances use the ``/exposed`` path prefix instead —
     even when deployed under a gitguardian domain, so the domain suffix alone is
     not enough to identify SaaS.
+
+    Some SaaS deployments expose the dashboard/API as ``dashboard-<id>.*`` /
+    ``api-<id>.*`` hosts, which are SaaS-mode too, so the first label may also be
+    a ``dashboard-`` / ``api-`` prefix rather than the bare word.
     """
     if not any(netloc.endswith("." + domain) for domain in GITGUARDIAN_DOMAINS):
         return False
-    return netloc.split(".", 1)[0] in ("dashboard", "api")
+    first_label = netloc.split(".", 1)[0]
+    return first_label in ("dashboard", "api") or first_label.startswith(
+        ("dashboard-", "api-")
+    )
 
 
 def clean_url(url: str, warn: bool = False) -> ParseResult:
