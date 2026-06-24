@@ -343,6 +343,8 @@ def test_request_headers(scan_mock: Mock, client):
             "GGShield-OS-Name": os_name,
             "GGShield-OS-Version": os_version,
             "GGShield-Python-Version": platform.python_version(),
+            "GGShield-Machine-Id": ANY,
+            "GGShield-Machine-Username": ANY,
             "mode": "path",
             "scan_options": ANY,
         },

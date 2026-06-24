@@ -15,6 +15,7 @@ import socket
 import subprocess
 import sys
 import uuid
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -35,6 +36,7 @@ def _get_hostname() -> str:
         return "unknown"
 
 
+@lru_cache(maxsize=1)
 def _get_username() -> str:
     try:
         return getpass.getuser()
@@ -137,6 +139,7 @@ def _get_windows_system_id() -> Optional[str]:
     return None
 
 
+@lru_cache(maxsize=1)
 def _get_machine_id() -> str:
 
     # In case Satori generated a machine id, use it.

@@ -37,6 +37,38 @@ def _assert_no_repo_url_in_headers(context: ScanContext):
     assert context.get_http_headers().get("GGShield-Repository-URL") is None
 
 
+@pytest.mark.parametrize(
+    "scan_mode", [ScanMode.PATH, ScanMode.CI, ScanMode.PRE_COMMIT, ScanMode.AI_HOOK]
+)
+@mock.patch(
+    "ggshield.core.scan.scan_context.get_repository_url_from_ci", return_value=None
+)
+@mock.patch("ggshield.core.scan.scan_context._get_username", return_value="alice")
+@mock.patch(
+    "ggshield.core.scan.scan_context._get_machine_id", return_value="machine-42"
+)
+def test_machine_identity_sent_on_every_scan(
+    _mid: mock.MagicMock,
+    _usr: mock.MagicMock,
+    _ci_url: mock.MagicMock,
+    scan_mode: ScanMode,
+    tmp_path: Path,
+) -> None:
+    """
+    GIVEN any scan mode
+    WHEN building the HTTP headers
+    THEN machine id and username ride along so the backend can identify the endpoint
+    """
+    context = ScanContext(
+        scan_mode=scan_mode,
+        command_path="ggshield secret scan",
+        target_path=tmp_path,
+    )
+    headers = context.get_http_headers()
+    assert headers["GGShield-Machine-Id"] == "machine-42"
+    assert headers["GGShield-Machine-Username"] == "alice"
+
+
 def test_scan_context_no_repo(
     tmp_path: Path,
 ):

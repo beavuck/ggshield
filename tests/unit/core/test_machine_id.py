@@ -16,6 +16,14 @@ from ggshield.core.machine_id import (
 )
 
 
+@pytest.fixture(autouse=True)
+def clear_machine_id_caches():
+    """Reset the lru_cache on cached helpers so each test sees its own mocks."""
+    _get_username.cache_clear()
+    _get_machine_id.cache_clear()
+    yield
+
+
 # ---------------------------------------------------------------------------
 # _get_hostname
 # ---------------------------------------------------------------------------
