@@ -103,3 +103,23 @@ def test_cd_context_manager(tmpdir):
     with cd(tmpdir):
         assert os.getcwd() == tmpdir
     assert os.getcwd() == prev
+
+
+class TestIsRoot:
+    def test_true_when_euid_zero(self, monkeypatch):
+        from ggshield.utils import os as os_utils
+
+        monkeypatch.setattr(os_utils.os, "geteuid", lambda: 0, raising=False)
+        assert os_utils.is_root() is True
+
+    def test_false_when_euid_nonzero(self, monkeypatch):
+        from ggshield.utils import os as os_utils
+
+        monkeypatch.setattr(os_utils.os, "geteuid", lambda: 501, raising=False)
+        assert os_utils.is_root() is False
+
+    def test_false_without_geteuid(self, monkeypatch):
+        from ggshield.utils import os as os_utils
+
+        monkeypatch.delattr(os_utils.os, "geteuid", raising=False)
+        assert os_utils.is_root() is False

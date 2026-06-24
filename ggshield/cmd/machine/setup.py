@@ -1,4 +1,3 @@
-import os
 from typing import Any, Tuple
 
 import click
@@ -15,6 +14,7 @@ from ggshield.cmd.install import (
 from ggshield.cmd.utils.common_options import add_common_options
 from ggshield.cmd.utils.context_obj import ContextObj
 from ggshield.core import ui
+from ggshield.utils.os import is_root
 from ggshield.verticals.ai.agents import AGENTS
 from ggshield.verticals.ai.installation import (
     check_ai_hook_authentication,
@@ -140,7 +140,7 @@ def _setup_git_hooks(system: bool) -> bool:
     overwritten. Returns False if any hook failed to install.
     """
     click.echo(click.style("Git hooks", bold=True))
-    use_system = system or _is_root()
+    use_system = system or is_root()
     if use_system:
         scope = "system"
         hook_dir = get_system_hook_dir_path() or get_default_system_hook_dir_path()
@@ -168,15 +168,6 @@ def _setup_git_hooks(system: bool) -> bool:
             ui.display_warning(f"  could not install {scope} {hook_type} hook: {exc}")
             ok = False
     return ok
-
-
-def _is_root() -> bool:
-    """Whether ggshield runs as root (POSIX). Selects machine-wide git hooks.
-
-    On non-POSIX platforms there is no ``geteuid``; the per-user path is used unless
-    ``--system`` is passed explicitly.
-    """
-    return hasattr(os, "geteuid") and os.geteuid() == 0
 
 
 def _setup_honeytokens(ctx: click.Context) -> bool:

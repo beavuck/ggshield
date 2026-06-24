@@ -52,6 +52,16 @@ def parse_os_release(os_release_path: Path) -> Tuple[str, str]:
         return error_tuple
 
 
+def is_root() -> bool:
+    """Whether the process runs as the POSIX superuser (euid 0).
+
+    Always False where there is no ``geteuid`` (e.g. Windows). Used to decide
+    machine-wide behavior, such as planting honeytokens for every user or
+    installing git hooks system-wide.
+    """
+    return hasattr(os, "geteuid") and os.geteuid() == 0
+
+
 @contextmanager
 def cd(newdir: Union[str, Path]) -> Iterator[None]:
     """

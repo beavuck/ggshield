@@ -217,9 +217,9 @@ class TestMachineSetupOrchestration:
 class TestSetupGitHooks:
     BASE = "ggshield.cmd.machine.setup"
 
-    # ``_is_root`` is pinned False so the per-user branch is deterministic even when
+    # ``is_root`` is pinned False so the per-user branch is deterministic even when
     # the test runs as root (e.g. a CI container).
-    @patch(f"{BASE}._is_root", return_value=False)
+    @patch(f"{BASE}.is_root", return_value=False)
     @patch(f"{BASE}.install_global")
     @patch(f"{BASE}.get_global_hook_dir_path", return_value=None)
     @patch(f"{BASE}.get_default_global_hook_dir_path")
@@ -232,7 +232,7 @@ class TestSetupGitHooks:
         assert _setup_git_hooks(system=False) is True
         assert mock_install.call_count == 2  # pre-commit + pre-push
 
-    @patch(f"{BASE}._is_root", return_value=False)
+    @patch(f"{BASE}.is_root", return_value=False)
     @patch(f"{BASE}.install_global")
     @patch(f"{BASE}.get_global_hook_dir_path", return_value=None)
     @patch(f"{BASE}.get_default_global_hook_dir_path")
@@ -249,7 +249,7 @@ class TestSetupGitHooks:
         assert _setup_git_hooks(system=False) is True
         mock_install.assert_not_called()
 
-    @patch(f"{BASE}._is_root", return_value=False)
+    @patch(f"{BASE}.is_root", return_value=False)
     @patch(f"{BASE}.install_global")
     @patch(f"{BASE}.get_global_hook_dir_path", return_value=None)
     @patch(f"{BASE}.get_default_global_hook_dir_path")
@@ -264,7 +264,7 @@ class TestSetupGitHooks:
         assert _setup_git_hooks(system=False) is True
         mock_install.assert_not_called()
 
-    @patch(f"{BASE}._is_root", return_value=False)
+    @patch(f"{BASE}.is_root", return_value=False)
     @patch(f"{BASE}.install_system")
     @patch(f"{BASE}.get_system_hook_dir_path", return_value=None)
     @patch(f"{BASE}.get_default_system_hook_dir_path")
@@ -277,7 +277,7 @@ class TestSetupGitHooks:
         assert _setup_git_hooks(system=True) is True
         assert mock_install.call_count == 2  # install_system, not install_global
 
-    @patch(f"{BASE}._is_root", return_value=True)
+    @patch(f"{BASE}.is_root", return_value=True)
     @patch(f"{BASE}.install_system")
     @patch(f"{BASE}.get_system_hook_dir_path", return_value=None)
     @patch(f"{BASE}.get_default_system_hook_dir_path")
