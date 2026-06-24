@@ -53,6 +53,11 @@ Environment:
                        flow (token login; combine with --instance)
   GGSHIELD_BIN_DIR     symlink dir (default ~/.local/bin)
   GGSHIELD_OPT_DIR     extraction dir (default ~/.local/share/ggshield-standalone)
+  GGSHIELD_REQUIRE_ATTESTATION
+                       set to 1 (or true/yes/on) to require gh build-provenance
+                       verification on top of the sha256 check; fails the install
+                       if gh is missing, older than 2.56.0, unauthenticated, or
+                       cannot verify the artifact (default: off)
 EOF
 }
 
@@ -153,7 +158,7 @@ asset_http_status() {
         2>/dev/null || echo 000
 }
 
-# Fail closed: a download we cannot verify is never installed.
+# sha256 is mandatory and fails closed; gh provenance is opt-in (verify_attestation).
 verify_download() {
     local file="$1" asset="$2" digest sum_tool
     digest=$(asset_digest "$asset")
@@ -171,14 +176,50 @@ verify_download() {
     echo "${digest#sha256:}  $file" | $sum_tool -c - >/dev/null ||
         die "checksum mismatch for $asset"
 
-    # older gh releases have no `attestation` subcommand
-    if command -v gh >/dev/null 2>&1 &&
-        gh attestation --help >/dev/null 2>&1 &&
-        gh auth status >/dev/null 2>&1; then
-        say "Verifying build provenance attestation"
-        gh attestation verify "$file" --repo "$GITHUB_REPO" >/dev/null ||
-            die "artifact attestation verification failed for $asset"
+    verify_attestation "$file" "$asset"
+}
+
+# 1/true/yes/on (any case, surrounding whitespace ignored) enable it; unset/empty/
+# 0/false/no/off disable; warn on anything else and treat as off, so a typo'd
+# opt-in is never silently ignored.
+require_attestation() {
+    local v="${GGSHIELD_REQUIRE_ATTESTATION:-}"
+    v="${v#"${v%%[![:space:]]*}"}" # strip leading whitespace
+    v="${v%"${v##*[![:space:]]}"}" # strip trailing whitespace
+    case "$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]')" in
+    1 | true | yes | on) return 0 ;;
+    '' | 0 | false | no | off) return 1 ;;
+    *)
+        warn "unrecognized GGSHIELD_REQUIRE_ATTESTATION value '$GGSHIELD_REQUIRE_ATTESTATION'; treating as off (use 1 to require)"
+        return 1
+        ;;
+    esac
+}
+
+# Build-provenance verification is opt-in and OFF by default. gh is not a ggshield
+# dependency, its version/auth/network state is ambient, and even a public lookup
+# needs an authenticated gh — running it automatically is fragile (END-609) and
+# usually can't run anyway, while the mandatory sha256 already covers integrity.
+# When opted in, fail closed if gh is missing, too old, unauthenticated, or the
+# provenance does not verify.
+verify_attestation() {
+    local file="$1" asset="$2"
+
+    if ! require_attestation; then
+        say "Skipping build provenance check (set GGSHIELD_REQUIRE_ATTESTATION=1 to require it). To verify a downloaded asset yourself:"
+        printf '    gh attestation verify <asset> --repo %s\n' "$GITHUB_REPO"
+        return 0
     fi
+
+    command -v gh >/dev/null 2>&1 ||
+        die "GGSHIELD_REQUIRE_ATTESTATION is set but gh is not installed (need gh >= 2.56.0)"
+    gh attestation --help >/dev/null 2>&1 ||
+        die "GGSHIELD_REQUIRE_ATTESTATION is set but this gh is too old for 'gh attestation' (need >= 2.56.0; e.g. 'brew upgrade gh')"
+    gh auth status >/dev/null 2>&1 ||
+        die "GGSHIELD_REQUIRE_ATTESTATION is set but gh is not authenticated; run 'gh auth login'"
+    say "Verifying build provenance attestation"
+    gh attestation verify "$file" --repo "$GITHUB_REPO" >/dev/null ||
+        die "build provenance verification failed for $asset: it does not match $GITHUB_REPO"
 }
 
 install_tarball() {

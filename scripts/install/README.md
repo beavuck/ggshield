@@ -40,8 +40,12 @@ The script installs the standalone build (detecting OS/arch, including Rosetta 2
   admin). `-Method msi` installs the system-wide MSI instead (requires admin).
 
 The download is **checksum-verified** against the digest GitHub publishes for
-each asset (the install aborts if it cannot be verified), and — when `gh` is
-available — against the release's [build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds).
+each asset (the install aborts if it cannot be verified). [Build provenance
+attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds)
+verification is **opt-in**: set `GGSHIELD_REQUIRE_ATTESTATION=1` to also verify
+it with `gh` (>= 2.56.0, authenticated) and fail the install if it cannot be
+verified. By default the script does not invoke `gh`; it prints the manual
+`gh attestation verify` command instead.
 
 Alpine/musl is not supported (the standalone build is glibc-only) — use the
 Docker image `gitguardian/ggshield` or `pipx install ggshield`.
@@ -100,13 +104,14 @@ printed `ggshield auth login` command.
 
 ### Environment variables
 
-| Variable               | Effect                                                        |
-| ---------------------- | ------------------------------------------------------------- |
-| `GGSHIELD_VERSION`     | same as `--version`                                           |
-| `GITGUARDIAN_INSTANCE` | instance to authenticate against (same as `--instance`)       |
-| `GITGUARDIAN_API_KEY`  | authenticate with this API key instead of the browser login   |
-| `GGSHIELD_BIN_DIR`     | symlink dir (default `~/.local/bin`)                          |
-| `GGSHIELD_OPT_DIR`     | extraction dir (default `~/.local/share/ggshield-standalone`) |
+| Variable                       | Effect                                                                                                                                                    |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GGSHIELD_VERSION`             | same as `--version`                                                                                                                                       |
+| `GITGUARDIAN_INSTANCE`         | instance to authenticate against (same as `--instance`)                                                                                                   |
+| `GITGUARDIAN_API_KEY`          | authenticate with this API key instead of the browser login                                                                                               |
+| `GGSHIELD_BIN_DIR`             | symlink dir (default `~/.local/bin`)                                                                                                                      |
+| `GGSHIELD_OPT_DIR`             | extraction dir (default `~/.local/share/ggshield-standalone`)                                                                                             |
+| `GGSHIELD_REQUIRE_ATTESTATION` | set to `1` to require `gh` build-provenance verification (needs `gh` >= 2.56.0, authenticated); fails the install if it cannot be verified (default: off) |
 
 ## Other install methods
 

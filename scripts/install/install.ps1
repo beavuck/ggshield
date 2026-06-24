@@ -75,7 +75,7 @@ function Get-AssetDigest($assetName) {
     return $null
 }
 
-# Fail closed: a download we cannot verify is never installed.
+# sha256 is mandatory and fails closed; gh provenance is opt-in (Test-Attestation).
 function Test-Download($file, $assetName) {
     $expected = Get-AssetDigest $assetName
     if (-not $expected) {
@@ -85,14 +85,43 @@ function Test-Download($file, $assetName) {
     $actual = (Get-FileHash -Algorithm SHA256 -Path $file).Hash
     if ($actual -ne $expected) { Die "checksum mismatch for $assetName" }
 
-    # opportunistic build provenance check; older gh has no `attestation`
-    if ((Get-Command gh -ErrorAction SilentlyContinue) -and
-        (Invoke-Native gh attestation --help) -eq 0 -and
-        (Invoke-Native gh auth status) -eq 0) {
-        Say 'Verifying build provenance attestation'
-        if ((Invoke-Native gh attestation verify $file --repo $GithubRepo) -ne 0) {
-            Die "artifact attestation verification failed for $assetName"
-        }
+    Test-Attestation $file $assetName
+}
+
+# 1/true/yes/on (any case, surrounding whitespace ignored) enable it; unset/empty/
+# 0/false/no/off disable; warn on anything else and treat as off.
+function Test-RequireAttestation {
+    $raw = "$env:GGSHIELD_REQUIRE_ATTESTATION"
+    $v = $raw.Trim().ToLowerInvariant()
+    if ([string]::IsNullOrEmpty($v)) { return $false }
+    if ($v -in @('1', 'true', 'yes', 'on')) { return $true }
+    if ($v -in @('0', 'false', 'no', 'off')) { return $false }
+    Warn "unrecognized GGSHIELD_REQUIRE_ATTESTATION value '$raw'; treating as off (use 1 to require)"
+    return $false
+}
+
+# Build-provenance verification is opt-in and OFF by default; see install.sh for
+# the rationale (ambient gh, and a public lookup still needs an authenticated gh,
+# so running it automatically is fragile — END-609). When opted in, fail closed if
+# gh is missing, too old, unauthenticated, or the provenance does not verify.
+function Test-Attestation($file, $assetName) {
+    if (-not (Test-RequireAttestation)) {
+        Say 'Skipping build provenance check (set GGSHIELD_REQUIRE_ATTESTATION=1 to require it). To verify a downloaded asset yourself:'
+        Write-Host "    gh attestation verify <asset> --repo $GithubRepo"
+        return
+    }
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        Die 'GGSHIELD_REQUIRE_ATTESTATION is set but gh is not installed (need gh >= 2.56.0)'
+    }
+    if ((Invoke-Native gh attestation --help) -ne 0) {
+        Die "GGSHIELD_REQUIRE_ATTESTATION is set but this gh is too old for 'gh attestation' (need >= 2.56.0)"
+    }
+    if ((Invoke-Native gh auth status) -ne 0) {
+        Die "GGSHIELD_REQUIRE_ATTESTATION is set but gh is not authenticated; run 'gh auth login'"
+    }
+    Say 'Verifying build provenance attestation'
+    if ((Invoke-Native gh attestation verify $file --repo $GithubRepo) -ne 0) {
+        Die "build provenance verification failed for ${assetName}: it does not match $GithubRepo"
     }
 }
 
