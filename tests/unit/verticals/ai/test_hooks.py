@@ -8,10 +8,12 @@ import pytest
 from pygitguardian import GGClient
 from pygitguardian.models import MCPActivityResponse
 
+from ggshield.core.scan import ScanContext, ScanMode
 from ggshield.utils.git_shell import Filemode
 from ggshield.verticals.ai.agents import Agent, Claude, Codex, Copilot, Cursor, VSCode
 from ggshield.verticals.ai.hooks import (
     AIHookScanner,
+    build_agent_headers,
     find_filepaths,
     has_already_been_seen,
     parse_hook_input,
@@ -232,6 +234,54 @@ class TestAIHookScannerScan:
         scanner = AIHookScanner(_mock_scanner([]))
         with pytest.raises(ValueError):
             scanner._scan_payloads([])
+
+
+class TestBuildAgentHeaders:
+    """``build_agent_headers`` names the calling AI agent via GGShield-Agent-Name.
+
+    Machine identity (Machine-Id / Machine-Username) is sent on every scan by
+    ``ScanContext.get_http_headers`` — only the agent name is hook-specific.
+    """
+
+    AGENT_HEADER = "GGShield-Agent-Name"
+
+    def test_returns_only_the_agent_name(self):
+        """Just the unprefixed Agent-Name; machine identity is not the hook's job."""
+        data = {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Write",
+            "tool_input": {"command": "echo hello"},
+            "cwd": "/home/alice/project",
+            "transcript_path": "/home/user/.claude/projects/foo/session.jsonl",
+            "session_id": "427ae0c5-0862-4e14-aa2c-12fad909c323",
+        }
+        assert build_agent_headers(json.dumps(data)) == {"Agent-Name": "claude-code"}
+
+    def test_agent_name_flows_through_scan_context(self):
+        """Fed into ScanContext, the agent name becomes a prefixed header beside mode."""
+        data = {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Write",
+            "tool_input": {"command": "echo hello"},
+            "transcript_path": "/home/user/.claude/projects/foo/session.jsonl",
+            "session_id": "s",
+        }
+        ctx = ScanContext(
+            scan_mode=ScanMode.AI_HOOK,
+            command_path="ggshield secret scan ai-hook",
+            extra_headers=build_agent_headers(json.dumps(data)),
+        )
+        http_headers = ctx.get_http_headers()
+        assert http_headers[self.AGENT_HEADER] == "claude-code"
+        assert http_headers["mode"] == ScanMode.AI_HOOK.value
+
+    def test_unrecognized_agent_degrades_to_empty_dict(self):
+        """An unrecognized agent yields no headers rather than raising (fail-open)."""
+        assert build_agent_headers(json.dumps({"hook_event_name": "PreToolUse"})) == {}
+
+    def test_invalid_json_degrades_to_empty_dict(self):
+        """Malformed input yields no headers rather than raising (fail-open)."""
+        assert build_agent_headers("not json") == {}
 
 
 class TestMCPActivity:
