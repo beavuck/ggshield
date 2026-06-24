@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from platformdirs import user_cache_dir, user_config_dir, user_data_dir
+from platformdirs import site_data_dir, user_cache_dir, user_config_dir, user_data_dir
 
 from ggshield.utils.git_shell import NotAGitDirectory, get_git_root
 
@@ -42,6 +42,19 @@ def get_data_dir() -> Path:
         return Path(
             user_data_dir(appname=APPNAME, appauthor=APPAUTHOR)
         )  # pragma: no cover
+
+
+def get_system_data_dir() -> Path:
+    """Machine-wide (all users) data dir, e.g. for system-scoped git hooks.
+
+    The system counterpart to :func:`get_data_dir`; used when ``machine setup`` runs
+    as root and installs git hooks for every user on the machine.
+    """
+    try:
+        # See tests/conftest.py for details
+        return Path(os.environ["GG_SYSTEM_DATA_DIR"])
+    except KeyError:
+        return Path(site_data_dir(appname=APPNAME, appauthor=APPAUTHOR))
 
 
 def get_plugins_dir(*, create: bool = False) -> Path:

@@ -1,4 +1,7 @@
 import os
+import stat
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -447,3 +450,70 @@ class TestInstallAIHook:
             assert _is_interactive() is True
             stdout.isatty.return_value = False
             assert _is_interactive() is False
+
+
+@pytest.fixture()
+def custom_system_paths(tmp_path, monkeypatch):
+    """Redirect git's system config + ggshield's system data dir to temp locations,
+    so system-scope hooks can be tested without root or touching /etc."""
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", str(tmp_path / "system-git-config"))
+    monkeypatch.setenv("GG_SYSTEM_DATA_DIR", str(tmp_path / "system-data"))
+    yield
+
+
+class TestInstallSystem:
+    """`install_system` installs git hooks machine-wide (used by `machine setup` as root)."""
+
+    def test_writes_hook_and_system_hookspath(self, custom_system_paths):
+        from ggshield.cmd.install import (
+            get_default_system_hook_dir_path,
+            install_system,
+        )
+
+        assert install_system("pre-commit", force=False, append=False) == 0
+        hook_path = get_default_system_hook_dir_path() / "pre-commit"
+        assert hook_path.is_file()
+        hook_str = hook_path.read_text()
+        assert "if [ -f .git/hooks/pre-commit ]; then" in hook_str
+        assert "ggshield secret scan pre-commit" in hook_str
+
+        out = subprocess.check_output(
+            ["git", "config", "--system", "--get", "core.hooksPath"], text=True
+        ).strip()
+        assert out == str(get_default_system_hook_dir_path())
+
+    def test_honors_existing_system_hookspath(self, tmp_path, custom_system_paths):
+        from ggshield.cmd.install import install_system
+
+        custom = tmp_path / "shared-hooks"
+        subprocess.run(
+            ["git", "config", "--system", "core.hooksPath", str(custom)], check=True
+        )
+        assert install_system("pre-push", force=False, append=False) == 0
+        assert (custom / "pre-push").is_file()
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX file mode bits")
+    def test_hook_is_world_readable(self, custom_system_paths):
+        from ggshield.cmd.install import (
+            get_default_system_hook_dir_path,
+            install_system,
+        )
+
+        install_system("pre-commit", force=False, append=False)
+        hook_dir = get_default_system_hook_dir_path()
+        assert stat.S_IMODE((hook_dir / "pre-commit").stat().st_mode) == 0o755
+        assert stat.S_IMODE(hook_dir.stat().st_mode) == 0o755
+
+
+class TestSystemDataDir:
+    def test_env_override(self, tmp_path, monkeypatch):
+        from ggshield.core.dirs import get_system_data_dir
+
+        monkeypatch.setenv("GG_SYSTEM_DATA_DIR", str(tmp_path))
+        assert get_system_data_dir() == tmp_path
+
+    def test_default_uses_site_data_dir(self, monkeypatch):
+        from ggshield.core.dirs import get_system_data_dir
+
+        monkeypatch.delenv("GG_SYSTEM_DATA_DIR", raising=False)
+        assert get_system_data_dir().name == "ggshield"
