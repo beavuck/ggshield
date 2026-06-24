@@ -358,6 +358,11 @@ post_install() {
     fi
 
     if [ "$INSTALL_ONLY" = 1 ]; then
+        # plugin install is auth-gated and --install-only skips auth, so any
+        # --plugin is deferred, not installed now: say so rather than silently
+        # dropping the flag.
+        [ ${#PLUGINS[@]} -gt 0 ] &&
+            warn "--plugin not installed: --install-only skips authentication; run the steps below once authenticated"
         say "ggshield is installed. To finish setup:"
         emit_auth_hint
         emit_plugin_hint
