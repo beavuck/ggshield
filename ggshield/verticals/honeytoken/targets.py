@@ -22,6 +22,7 @@ from typing import Dict, List, Optional
 
 from ggshield.core.dirs import get_user_home_dir
 from ggshield.core.machine_id import _get_hostname, _get_machine_id, _get_username
+from ggshield.utils.os import is_root  # re-exported for cmd.honeytoken.plant
 from ggshield.verticals.honeytoken.aws_profile import (
     PlacementError,
     open_aws_dir_fd,
@@ -50,10 +51,6 @@ class Target:
     home: Path
     # Numeric uid for chown when running as root (None when not needed/known).
     uid: Optional[int]
-
-
-def is_root() -> bool:
-    return hasattr(os, "geteuid") and os.geteuid() == 0
 
 
 def machine_info_for(username: str) -> Dict[str, str]:

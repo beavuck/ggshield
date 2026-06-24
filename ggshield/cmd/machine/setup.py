@@ -5,12 +5,16 @@ import click
 from ggshield.cmd.honeytoken.plant import plant_cmd
 from ggshield.cmd.install import (
     get_default_global_hook_dir_path,
+    get_default_system_hook_dir_path,
     get_global_hook_dir_path,
+    get_system_hook_dir_path,
     install_global,
+    install_system,
 )
 from ggshield.cmd.utils.common_options import add_common_options
 from ggshield.cmd.utils.context_obj import ContextObj
 from ggshield.core import ui
+from ggshield.utils.os import is_root
 from ggshield.verticals.ai.agents import AGENTS
 from ggshield.verticals.ai.installation import (
     check_ai_hook_authentication,
@@ -54,6 +58,13 @@ _GIT_HOOK_TYPES = ("pre-commit", "pre-push")
     metavar="ASSISTANT",
     help="Skip these assistants when configuring the AI hook (repeatable).",
 )
+@click.option(
+    "--system",
+    "system",
+    is_flag=True,
+    help="Install the git hooks machine-wide (all users) instead of for the "
+    "current user. Implied when running as root, e.g. under an MDM.",
+)
 @add_common_options()
 @click.pass_context
 def setup_cmd(
@@ -63,6 +74,7 @@ def setup_cmd(
     no_honeytokens: bool,
     agents: Tuple[str, ...],
     exclude_agents: Tuple[str, ...],
+    system: bool,
     **kwargs: Any,
 ) -> int:
     """
@@ -75,7 +87,8 @@ def setup_cmd(
 
     Each protection is on by default; drop one with `--no-ai-hooks`,
     `--no-git-hooks`, or `--no-honeytokens`. `--agent` / `--exclude-agent`
-    narrow which assistants get the AI hook.
+    narrow which assistants get the AI hook. When run as root (or with
+    `--system`), the git hooks are installed machine-wide for every user.
     """
     if agents and exclude_agents:
         raise click.UsageError("--agent and --exclude-agent cannot be used together.")
@@ -87,7 +100,7 @@ def setup_cmd(
             failed = True
 
     if not no_git_hooks:
-        if not _setup_git_hooks():
+        if not _setup_git_hooks(system):
             failed = True
 
     if not no_honeytokens:
@@ -115,30 +128,44 @@ def _setup_ai_hooks(
     return summary.failed == 0
 
 
-def _setup_git_hooks() -> bool:
-    """Install the global git pre-commit/pre-push hooks, idempotently.
+def _setup_git_hooks(system: bool) -> bool:
+    """Install the git pre-commit/pre-push hooks, idempotently.
+
+    Per-user (``global``) by default. Machine-wide (``system``) when ``--system`` is
+    given or ggshield runs as root: it sets git's system ``core.hooksPath`` once so
+    every user on the machine is covered — the right behavior for MDM, where a
+    per-user (root-only) install would protect nobody who actually commits.
 
     A hook already wired to ggshield is left as-is; a foreign hook is never
     overwritten. Returns False if any hook failed to install.
     """
     click.echo(click.style("Git hooks", bold=True))
-    hook_dir = get_global_hook_dir_path() or get_default_global_hook_dir_path()
+    use_system = system or is_root()
+    if use_system:
+        scope = "system"
+        hook_dir = get_system_hook_dir_path() or get_default_system_hook_dir_path()
+        installer = install_system
+    else:
+        scope = "global"
+        hook_dir = get_global_hook_dir_path() or get_default_global_hook_dir_path()
+        installer = install_global
+
     ok = True
     for hook_type in _GIT_HOOK_TYPES:
         hook_path = hook_dir / hook_type
         if hook_path.is_file():
             if "ggshield secret scan" in hook_path.read_text(errors="ignore"):
-                click.echo(f"  global {hook_type} hook already configured")
+                click.echo(f"  {scope} {hook_type} hook already configured")
             else:
                 ui.display_warning(
-                    f"  a non-ggshield global {hook_type} hook is present; "
+                    f"  a non-ggshield {scope} {hook_type} hook is present; "
                     "left untouched"
                 )
             continue
         try:
-            install_global(hook_type=hook_type, force=False, append=False)
+            installer(hook_type=hook_type, force=False, append=False)
         except Exception as exc:  # one hook failure must not abort the whole setup
-            ui.display_warning(f"  could not install global {hook_type} hook: {exc}")
+            ui.display_warning(f"  could not install {scope} {hook_type} hook: {exc}")
             ok = False
     return ok
 

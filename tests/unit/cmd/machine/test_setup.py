@@ -199,25 +199,45 @@ class TestMachineSetupOrchestration:
         result, _m_ai, _m_git, _m_ht = self._run(cli_fs_runner, [], git=False)
         assert result.exit_code == 1
 
+    def test_system_flag_forwarded_to_git_hooks(self, cli_fs_runner: CliRunner):
+        result, _m_ai, m_git, _m_ht = self._run(
+            cli_fs_runner, ["--system", "--no-ai-hooks", "--no-honeytokens"]
+        )
+        assert_invoke_ok(result)
+        m_git.assert_called_once_with(True)
+
+    def test_git_hooks_default_to_non_system(self, cli_fs_runner: CliRunner):
+        result, _m_ai, m_git, _m_ht = self._run(
+            cli_fs_runner, ["--no-ai-hooks", "--no-honeytokens"]
+        )
+        assert_invoke_ok(result)
+        m_git.assert_called_once_with(False)
+
 
 class TestSetupGitHooks:
     BASE = "ggshield.cmd.machine.setup"
 
+    # ``is_root`` is pinned False so the per-user branch is deterministic even when
+    # the test runs as root (e.g. a CI container).
+    @patch(f"{BASE}.is_root", return_value=False)
     @patch(f"{BASE}.install_global")
     @patch(f"{BASE}.get_global_hook_dir_path", return_value=None)
     @patch(f"{BASE}.get_default_global_hook_dir_path")
-    def test_installs_absent_hooks(self, mock_dir, _mock_cfg, mock_install, tmp_path):
+    def test_installs_absent_hooks(
+        self, mock_dir, _mock_cfg, mock_install, _mock_root, tmp_path
+    ):
         from ggshield.cmd.machine.setup import _setup_git_hooks
 
         mock_dir.return_value = tmp_path  # empty dir -> both hooks absent
-        assert _setup_git_hooks() is True
+        assert _setup_git_hooks(system=False) is True
         assert mock_install.call_count == 2  # pre-commit + pre-push
 
+    @patch(f"{BASE}.is_root", return_value=False)
     @patch(f"{BASE}.install_global")
     @patch(f"{BASE}.get_global_hook_dir_path", return_value=None)
     @patch(f"{BASE}.get_default_global_hook_dir_path")
     def test_skips_existing_ggshield_hooks(
-        self, mock_dir, _mock_cfg, mock_install, tmp_path
+        self, mock_dir, _mock_cfg, mock_install, _mock_root, tmp_path
     ):
         from ggshield.cmd.machine.setup import _setup_git_hooks
 
@@ -226,22 +246,49 @@ class TestSetupGitHooks:
             (tmp_path / hook_type).write_text(
                 f"#!/bin/sh\nggshield secret scan {hook_type}\n"
             )
-        assert _setup_git_hooks() is True
+        assert _setup_git_hooks(system=False) is True
         mock_install.assert_not_called()
 
+    @patch(f"{BASE}.is_root", return_value=False)
     @patch(f"{BASE}.install_global")
     @patch(f"{BASE}.get_global_hook_dir_path", return_value=None)
     @patch(f"{BASE}.get_default_global_hook_dir_path")
     def test_leaves_foreign_hooks_untouched(
-        self, mock_dir, _mock_cfg, mock_install, tmp_path
+        self, mock_dir, _mock_cfg, mock_install, _mock_root, tmp_path
     ):
         from ggshield.cmd.machine.setup import _setup_git_hooks
 
         mock_dir.return_value = tmp_path
         (tmp_path / "pre-commit").write_text("#!/bin/sh\nother-tool\n")
         (tmp_path / "pre-push").write_text("#!/bin/sh\nggshield secret scan pre-push\n")
-        assert _setup_git_hooks() is True
+        assert _setup_git_hooks(system=False) is True
         mock_install.assert_not_called()
+
+    @patch(f"{BASE}.is_root", return_value=False)
+    @patch(f"{BASE}.install_system")
+    @patch(f"{BASE}.get_system_hook_dir_path", return_value=None)
+    @patch(f"{BASE}.get_default_system_hook_dir_path")
+    def test_system_scope_via_flag(
+        self, mock_dir, _mock_cfg, mock_install, _mock_root, tmp_path
+    ):
+        from ggshield.cmd.machine.setup import _setup_git_hooks
+
+        mock_dir.return_value = tmp_path
+        assert _setup_git_hooks(system=True) is True
+        assert mock_install.call_count == 2  # install_system, not install_global
+
+    @patch(f"{BASE}.is_root", return_value=True)
+    @patch(f"{BASE}.install_system")
+    @patch(f"{BASE}.get_system_hook_dir_path", return_value=None)
+    @patch(f"{BASE}.get_default_system_hook_dir_path")
+    def test_system_scope_when_root(
+        self, mock_dir, _mock_cfg, mock_install, _mock_root, tmp_path
+    ):
+        from ggshield.cmd.machine.setup import _setup_git_hooks
+
+        mock_dir.return_value = tmp_path
+        assert _setup_git_hooks(system=False) is True  # root implies system scope
+        assert mock_install.call_count == 2
 
 
 class TestHoneytokenPlant:

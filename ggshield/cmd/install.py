@@ -9,7 +9,7 @@ from click import UsageError
 from ggshield.cmd.utils.common_options import add_common_options
 from ggshield.cmd.utils.context_obj import ContextObj
 from ggshield.core import ui
-from ggshield.core.dirs import get_data_dir
+from ggshield.core.dirs import get_data_dir, get_system_data_dir
 from ggshield.core.errors import UnexpectedError
 from ggshield.utils.git_shell import check_git_dir, git
 from ggshield.verticals.ai.installation import (
@@ -126,6 +126,49 @@ def get_global_hook_dir_path() -> Optional[Path]:
     return Path(click.format_filename(out)).expanduser()
 
 
+def install_system(hook_type: str, force: bool, append: bool) -> int:
+    """System-wide (all users) pre-commit/pre-push hook installation.
+
+    Sets git's ``--system`` ``core.hooksPath`` to a shared, world-readable directory
+    so every user on the machine inherits the hook from a single install — the right
+    behavior when ``machine setup`` runs as root under an MDM. Requires write access
+    to the system git config and data dir (i.e. root).
+    """
+    hook_dir_path = get_system_hook_dir_path()
+
+    if not hook_dir_path:
+        hook_dir_path = get_default_system_hook_dir_path()
+        git(
+            ["config", "--system", "core.hooksPath", str(hook_dir_path)],
+            ignore_git_config=False,
+        )
+
+    return create_hook(
+        hook_dir_path=hook_dir_path,
+        force=force,
+        local_hook_support=True,
+        hook_type=hook_type,
+        append=append,
+        world_readable=True,
+    )
+
+
+def get_default_system_hook_dir_path() -> Path:
+    """Return the machine-wide directory in which ggshield creates its system hooks."""
+    return get_system_data_dir() / "git-hooks"
+
+
+def get_system_hook_dir_path() -> Optional[Path]:
+    """Return the hooks path defined in git system config (if it exists)."""
+    try:
+        out = git(
+            ["config", "--system", "--get", "core.hooksPath"], ignore_git_config=False
+        )
+    except subprocess.CalledProcessError:
+        return None
+    return Path(click.format_filename(out)).expanduser()
+
+
 def install_local(hook_type: str, force: bool, append: bool) -> int:
     """Local pre-commit/pre-push hook installation."""
     check_git_dir()
@@ -181,9 +224,21 @@ def create_hook(
     local_hook_support: bool,
     hook_type: str,
     append: bool,
+    world_readable: bool = False,
 ) -> int:
-    """Create hook directory (if needed) and pre-commit/pre-push file."""
+    """Create hook directory (if needed) and pre-commit/pre-push file.
+
+    ``world_readable`` makes the directory and hook script readable and executable by
+    every user (0755) instead of owner-only (0700) — required for a system-wide
+    install, where the hook runs as each committing user.
+    """
     hook_dir_path.mkdir(parents=True, exist_ok=True)
+    if world_readable:
+        # A system-scoped hooks dir must be traversable + readable by all users.
+        try:
+            os.chmod(hook_dir_path, 0o755)
+        except OSError:
+            pass
     hook_path = hook_dir_path / hook_type
 
     if hook_path.is_dir():
@@ -209,7 +264,7 @@ def create_hook(
             f.write("\n")
 
         f.write(f'ggshield secret scan {hook_type} "$@"\n')
-        os.chmod(hook_path, 0o700)
+        os.chmod(hook_path, 0o755 if world_readable else 0o700)
 
     click.echo(
         f"{hook_type} successfully added in"
