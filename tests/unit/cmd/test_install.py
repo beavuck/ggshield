@@ -7,12 +7,9 @@ from click.testing import CliRunner
 from pygitguardian.models import HealthCheckResponse
 
 from ggshield.__main__ import cli
-from ggshield.cmd.install import (
-    _is_interactive,
-    get_default_global_hook_dir_path,
-    install_local,
-)
+from ggshield.cmd.install import get_default_global_hook_dir_path, install_local
 from ggshield.core.errors import ExitCode, MissingTokenError
+from ggshield.verticals.ai.installation import _is_interactive
 from tests.unit.conftest import assert_invoke_exited_with, assert_invoke_ok
 
 
@@ -338,8 +335,31 @@ class TestInstallGlobal:
 
 
 class TestInstallAIHook:
-    @patch("ggshield.cmd.install._is_interactive", return_value=True)
-    @patch("ggshield.cmd.install.create_client_from_config")
+    @patch("ggshield.verticals.ai.installation._is_interactive", return_value=False)
+    def test_install_ai_hook_is_deprecated(
+        self, interactive_mock: Mock, cli_fs_runner: CliRunner
+    ):
+        """Installing an AI hook per assistant warns it is deprecated."""
+        result = cli_fs_runner.invoke(
+            cli, ["install", "-m", "local", "-t", "claude-code"]
+        )
+        assert_invoke_ok(result)
+        assert "deprecated" in result.output
+        assert "machine setup" in result.output
+
+    @patch("ggshield.cmd.install.check_git_dir")
+    def test_install_git_hook_is_not_deprecated(
+        self, check_dir_mock: Mock, cli_fs_runner: CliRunner
+    ):
+        """Installing a git hook is not deprecated and must not warn."""
+        result = cli_fs_runner.invoke(
+            cli, ["install", "-m", "local", "-t", "pre-commit"]
+        )
+        assert_invoke_ok(result)
+        assert "deprecated" not in result.output
+
+    @patch("ggshield.verticals.ai.installation._is_interactive", return_value=True)
+    @patch("ggshield.verticals.ai.installation.create_client_from_config")
     def test_install_auth_preflight_success(
         self, create_client_mock: Mock, interactive_mock: Mock, cli_fs_runner: CliRunner
     ):
@@ -359,9 +379,9 @@ class TestInstallAIHook:
         assert Path(".claude/settings.json").is_file()
         assert "the hook is ready to scan" in result.output
 
-    @patch("ggshield.cmd.install._is_interactive", return_value=True)
+    @patch("ggshield.verticals.ai.installation._is_interactive", return_value=True)
     @patch(
-        "ggshield.cmd.install.create_client_from_config",
+        "ggshield.verticals.ai.installation.create_client_from_config",
         side_effect=MissingTokenError(instance="https://dashboard.gitguardian.com"),
     )
     def test_install_auth_preflight_failure_warns(
@@ -381,8 +401,8 @@ class TestInstallAIHook:
         assert "will NOT scan anything" in result.output
         assert "ggshield auth login" in result.output
 
-    @patch("ggshield.cmd.install._is_interactive", return_value=False)
-    @patch("ggshield.cmd.install.create_client_from_config")
+    @patch("ggshield.verticals.ai.installation._is_interactive", return_value=False)
+    @patch("ggshield.verticals.ai.installation.create_client_from_config")
     def test_install_auth_preflight_skipped_when_non_interactive(
         self, create_client_mock: Mock, interactive_mock: Mock, cli_fs_runner: CliRunner
     ):
@@ -400,8 +420,8 @@ class TestInstallAIHook:
         create_client_mock.assert_not_called()
         assert "ready to scan" not in result.output
 
-    @patch("ggshield.cmd.install._is_interactive", return_value=True)
-    @patch("ggshield.cmd.install.create_client_from_config")
+    @patch("ggshield.verticals.ai.installation._is_interactive", return_value=True)
+    @patch("ggshield.verticals.ai.installation.create_client_from_config")
     def test_install_auth_preflight_unhealthy_warns(
         self, create_client_mock: Mock, interactive_mock: Mock, cli_fs_runner: CliRunner
     ):
@@ -422,7 +442,7 @@ class TestInstallAIHook:
 
     def test_is_interactive_reflects_stdout_tty(self):
         """_is_interactive mirrors whether stdout is a terminal."""
-        with patch("ggshield.cmd.install.sys.stdout") as stdout:
+        with patch("ggshield.verticals.ai.installation.sys.stdout") as stdout:
             stdout.isatty.return_value = True
             assert _is_interactive() is True
             stdout.isatty.return_value = False

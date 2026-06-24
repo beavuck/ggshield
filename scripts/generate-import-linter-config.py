@@ -47,6 +47,10 @@ STATIC_CONFIG = {
             "ignore_imports": [
                 "ggshield.cmd.** -> ggshield.cmd.utils.*",
                 "ggshield.utils.click.** -> click",
+                # `machine setup` is an orchestrator: it reuses the honeytoken
+                # plant command and drives the git-hook install logic.
+                "ggshield.cmd.machine.** -> ggshield.cmd.honeytoken.plant",
+                "ggshield.cmd.machine.** -> ggshield.cmd.install",
             ],
             "unmatched_ignore_imports_alerting": "warn",
         },
@@ -66,6 +70,9 @@ STATIC_CONFIG = {
                 "ggshield.cmd.auth.** -> ggshield.verticals.hmsl.**",
                 # Install command import logic to install AI hooks
                 "ggshield.cmd.install -> ggshield.verticals.ai.installation",
+                # Machine setup configures AI hooks for all detected agents
+                "ggshield.cmd.machine.** -> ggshield.verticals.ai.installation",
+                "ggshield.cmd.machine.** -> ggshield.verticals.ai.agents",
                 # AI hook command import logic to scan AI hook payloads
                 "ggshield.cmd.secret.scan.ai_hook -> ggshield.verticals.ai.hooks",
             ],

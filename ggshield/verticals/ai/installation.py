@@ -5,12 +5,17 @@ import sys
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
+from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple
 
 import click
+from pygitguardian.models import HealthCheckResponse
 
+from ggshield.core import ui
+from ggshield.core.client import create_client_from_config
+from ggshield.core.config import Config
 from ggshield.core.dirs import get_user_home_dir
 from ggshield.core.errors import UnexpectedError
+from ggshield.core.text_utils import pluralize
 
 from .agents import AGENTS, Agent
 
@@ -228,3 +233,98 @@ def are_hooks_installed_globally(agent_name: str) -> Tuple[bool, Optional[str]]:
         result.stats.added == 0,
         result.stats.command if result.stats.added == 0 else None,
     )
+
+
+@dataclass
+class SetupSummary:
+    """Outcome of configuring AI hooks across one or more agents."""
+
+    configured: int = 0
+    failed: int = 0
+
+
+def select_agents(only: Sequence[str], exclude: Sequence[str]) -> List[Agent]:
+    """Pick which agents ``machine setup`` should configure.
+
+    With no flags, returns every agent detected on this machine. ``only``
+    restricts to an explicit list (configured even when not yet present, since
+    the user named them). ``exclude`` drops agents from the detected set.
+    """
+    if only:
+        return [AGENTS[name] for name in only]
+    agents = [agent for agent in AGENTS.values() if agent.is_present()]
+    if exclude:
+        excluded = set(exclude)
+        agents = [agent for agent in agents if agent.name not in excluded]
+    return agents
+
+
+def install_all_agent_hooks(
+    only: Sequence[str] = (),
+    exclude: Sequence[str] = (),
+    force: bool = False,
+) -> SetupSummary:
+    """Install the ggshield AI hook for every selected agent (user/global scope).
+
+    This is the engine behind ``ggshield machine setup``: one command that
+    configures all detected AI coding assistants instead of one per agent.
+    Per-agent results are printed by :func:`install_hooks`; the returned summary
+    counts how many agents were configured and how many failed.
+    """
+    agents = select_agents(only, exclude)
+    if not agents:
+        click.echo(
+            "No AI coding assistants detected on this machine. "
+            "Use --only <assistant> to configure one explicitly "
+            f"({', '.join(sorted(AGENTS))})."
+        )
+        return SetupSummary()
+
+    click.echo(
+        f"Configuring ggshield AI hooks for {len(agents)} "
+        f"{pluralize('assistant', len(agents))}: "
+        + ", ".join(agent.display_name for agent in agents)
+    )
+
+    summary = SetupSummary()
+    for agent in agents:
+        if install_hooks(name=agent.name, mode="global", force=force) == 0:
+            summary.configured += 1
+        else:
+            summary.failed += 1
+    return summary
+
+
+def _is_interactive() -> bool:
+    """Whether setup is running with a user present at a terminal."""
+    return sys.stdout.isatty()
+
+
+def check_ai_hook_authentication(config: Config) -> None:
+    """Verify the freshly configured AI hook will be able to authenticate.
+
+    The hook runs as an agent-spawned, non-interactive process, where an auth
+    failure would otherwise only show up as a warning on every tool call.
+    Checking now also makes the OS credentials store ask for access (e.g. the
+    macOS Keychain authorization prompt) while the user can still answer it.
+
+    Skip this in non-interactive runs (CI, automated fleet/MDM provisioning):
+    there is no one to answer a credential-store popup or read the result, and
+    triggering the prompt there would be disruptive.
+    """
+    if not _is_interactive():
+        return
+    try:
+        client = create_client_from_config(config)
+        response = client.health_check()
+        if not isinstance(response, HealthCheckResponse) or response.status_code != 200:
+            raise UnexpectedError(str(getattr(response, "detail", response)))
+    except Exception as exc:
+        ui.display_warning(
+            f"The hook is installed but ggshield cannot reach GitGuardian: {exc}\n"
+            "The hook will NOT scan anything until this is fixed. Run "
+            "'ggshield auth login' to authenticate, then 'ggshield api-status' "
+            "to check."
+        )
+    else:
+        click.echo("ggshield successfully authenticated: the hook is ready to scan.")

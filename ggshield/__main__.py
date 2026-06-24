@@ -16,6 +16,7 @@ from ggshield.cmd.config import config_group
 from ggshield.cmd.hmsl import hmsl_group
 from ggshield.cmd.honeytoken import honeytoken_group
 from ggshield.cmd.install import install_cmd
+from ggshield.cmd.machine import machine_group
 from ggshield.cmd.plugin import plugin_group
 from ggshield.cmd.quota import quota_cmd
 from ggshield.cmd.secret import secret_group
@@ -95,6 +96,7 @@ def _load_plugins() -> PluginRegistry:
         "plugin": plugin_group,
         "secret": secret_group,
         "install": install_cmd,
+        "machine": machine_group,
         "quota": quota_cmd,
         "api-status": status_cmd,
         "honeytoken": honeytoken_group,
@@ -168,26 +170,53 @@ def cli(
 
 # Register plugin commands with the CLI group.
 # Called from main() to avoid import-time side effects.
+def _add_or_merge_plugin_command(
+    root: click.Group, command: click.Command, warnings: List[str]
+) -> None:
+    """Add a plugin command to the CLI, merging into a built-in group on conflict.
+
+    A plugin normally contributes a brand-new top-level command. When its name
+    collides with an existing built-in command we used to skip it entirely. But
+    some plugins (e.g. ``machine_scan``) contribute subcommands of a namespace
+    that ggshield now owns built-in (``machine``). In that case both the
+    existing command and the plugin command are groups, and we merge the
+    plugin's subcommands into the built-in group rather than dropping them.
+    Overlapping subcommand names are skipped so a plugin can never silently
+    override a built-in subcommand.
+    """
+    name = command.name
+    existing = root.commands.get(name) if name else None
+
+    if existing is None:
+        root.add_command(command)
+        return
+
+    if isinstance(existing, click.Group) and isinstance(command, click.Group):
+        for sub_name, sub_cmd in command.commands.items():
+            if sub_name in existing.commands:
+                warnings.append(
+                    f"Skipping plugin subcommand '{name} {sub_name}' because it "
+                    "conflicts with an existing command"
+                )
+                continue
+            existing.add_command(sub_cmd, sub_name)
+        return
+
+    warnings.append(
+        f"Skipping plugin command '{name}' because it conflicts with an "
+        "existing command"
+    )
+
+
 def _register_plugin_commands() -> None:
     """Register plugin commands with the CLI."""
     try:
         registry = _load_plugins()
-        existing_commands = set(cli.commands)
         for cmd in registry.get_commands():
-            cmd_name = cmd.name
-            if not cmd_name:
+            if not cmd.name:
                 _deferred_warnings.append("Skipping unnamed plugin command")
                 continue
-
-            if cmd_name in existing_commands:
-                _deferred_warnings.append(
-                    "Skipping plugin command "
-                    f"'{cmd_name}' because it conflicts with an existing command"
-                )
-                continue
-
-            cli.add_command(cmd)
-            existing_commands.add(cmd_name)
+            _add_or_merge_plugin_command(cli, cmd, _deferred_warnings)
     except Exception as e:
         _deferred_warnings.append(f"Failed to register plugin commands: {e}")
 

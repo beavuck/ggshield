@@ -9,12 +9,14 @@ name = ggshield-layers
 type = layers
 layers = 
 	ggshield.__main__
-	ggshield.cmd.ai | ggshield.cmd.auth | ggshield.cmd.config | ggshield.cmd.hmsl | ggshield.cmd.honeytoken | ggshield.cmd.install | ggshield.cmd.plugin | ggshield.cmd.quota | ggshield.cmd.secret | ggshield.cmd.status | ggshield.cmd.utils
+	ggshield.cmd.ai | ggshield.cmd.auth | ggshield.cmd.config | ggshield.cmd.hmsl | ggshield.cmd.honeytoken | ggshield.cmd.install | ggshield.cmd.machine | ggshield.cmd.plugin | ggshield.cmd.quota | ggshield.cmd.secret | ggshield.cmd.status | ggshield.cmd.utils
 	ggshield.verticals.ai | ggshield.verticals.auth | ggshield.verticals.hmsl | ggshield.verticals.honeytoken | ggshield.verticals.secret
 	ggshield.core
 	click | ggshield.utils | pygitguardian
 ignore_imports = 
 	ggshield.cmd.** -> ggshield.cmd.utils.*
+	ggshield.cmd.machine.** -> ggshield.cmd.honeytoken.plant
+	ggshield.cmd.machine.** -> ggshield.cmd.install
 	ggshield.utils.click.** -> click
 unmatched_ignore_imports_alerting = warn
 
@@ -28,6 +30,7 @@ source_modules =
 	ggshield.cmd.hmsl
 	ggshield.cmd.honeytoken
 	ggshield.cmd.install
+	ggshield.cmd.machine
 	ggshield.cmd.plugin
 	ggshield.cmd.quota
 	ggshield.cmd.secret
@@ -54,6 +57,10 @@ ignore_imports =
 	ggshield.cmd.install -> ggshield.verticals.ai.installation
 	ggshield.cmd.install.** -> ggshield.verticals.install
 	ggshield.cmd.install.** -> ggshield.verticals.install.**
+	ggshield.cmd.machine.** -> ggshield.verticals.ai.agents
+	ggshield.cmd.machine.** -> ggshield.verticals.ai.installation
+	ggshield.cmd.machine.** -> ggshield.verticals.machine
+	ggshield.cmd.machine.** -> ggshield.verticals.machine.**
 	ggshield.cmd.plugin.** -> ggshield.core.plugin
 	ggshield.cmd.plugin.** -> ggshield.core.plugin.**
 	ggshield.cmd.quota.** -> ggshield.verticals.quota
