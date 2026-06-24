@@ -251,14 +251,17 @@ class PluginLoader:
             try:
                 plugin = self._load_plugin(discovered)
                 if plugin is None:
+                    registry.record_load_failure(discovered.name, "could not be loaded")
                     continue
 
                 if not self._check_version_compatibility(plugin.metadata):
-                    logger.warning(
-                        "Plugin %s requires ggshield >= %s, skipping",
-                        plugin.metadata.name,
-                        plugin.metadata.min_ggshield_version,
+                    reason = (
+                        "requires ggshield >= %s" % plugin.metadata.min_ggshield_version
                     )
+                    logger.warning(
+                        "Plugin %s %s, skipping", plugin.metadata.name, reason
+                    )
+                    registry.record_load_failure(discovered.name, reason)
                     continue
 
                 plugin.on_load()
@@ -273,6 +276,7 @@ class PluginLoader:
 
             except Exception as e:
                 logger.warning("Failed to load plugin %s: %s", discovered.name, e)
+                registry.record_load_failure(discovered.name, str(e))
 
         return registry
 
@@ -371,8 +375,10 @@ class PluginLoader:
             plugin_class = getattr(module, class_name)
             return plugin_class()
         except Exception as e:
-            logger.warning("Failed to load wheel %s: %s", wheel_path, e)
-            return None
+            # Propagate so load_enabled_plugins records the real reason, e.g. a
+            # native ABI mismatch (manylinux wheel on a musl host).
+            logger.debug("Wheel load failed for %s: %s", wheel_path, e)
+            raise
 
     def _prune_stale_extract_dirs(self, keep_dir: Path) -> None:
         """Remove stale extraction dirs for the same plugin cache bucket."""

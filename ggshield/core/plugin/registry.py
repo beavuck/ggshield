@@ -16,10 +16,19 @@ class PluginRegistry:
 
     _plugins: Dict[str, GGShieldPlugin] = field(default_factory=dict)
     _commands: List[click.Command] = field(default_factory=list)
+    _load_failures: Dict[str, str] = field(default_factory=dict)
 
     def register_plugin(self, plugin: GGShieldPlugin) -> None:
         """Register a loaded plugin."""
         self._plugins[plugin.metadata.name] = plugin
+
+    def record_load_failure(self, name: str, reason: str) -> None:
+        """Record that an enabled plugin failed to load (commands unavailable)."""
+        self._load_failures[name] = reason
+
+    def get_load_failures(self) -> Dict[str, str]:
+        """Map of enabled-but-failed plugin name -> failure reason."""
+        return self._load_failures.copy()
 
     def register_command(self, command: click.Command) -> None:
         """Register a CLI command provided by a plugin."""

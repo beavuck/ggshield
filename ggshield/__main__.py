@@ -221,6 +221,16 @@ def _register_plugin_commands() -> None:
         _deferred_warnings.append(f"Failed to register plugin commands: {e}")
 
 
+# Emitted before Click dispatches: a failed load leaves the command unregistered,
+# so Click rejects it as unknown and the group callback never runs to warn.
+def _warn_about_failed_plugins() -> None:
+    for name, reason in _load_plugins().get_load_failures().items():
+        ui.display_warning(
+            "Plugin '%s' is enabled but failed to load: %s. Its commands are "
+            "unavailable; run `ggshield plugin list` for status." % (name, reason)
+        )
+
+
 def _set_color(ctx: click.Context):
     """
     Helper function to override the default click default output color setting.
@@ -330,6 +340,11 @@ def main(args: Optional[List[str]] = None) -> Any:
 
     force_utf8_output()
     setup_truststore()
+
+    # cli.main() has not yet consumed _GGSHIELD_COMPLETE, so skip the warning
+    # during shell completion to avoid leaking it into completion output.
+    if "_GGSHIELD_COMPLETE" not in os.environ:
+        _warn_about_failed_plugins()
 
     show_crash_log = getenv_bool("GITGUARDIAN_CRASH_LOG")
     return cli.main(args, prog_name="ggshield", standalone_mode=not show_crash_log)

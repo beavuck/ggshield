@@ -3,6 +3,7 @@
 from unittest import mock
 
 import click
+import pytest
 
 
 def test_register_plugin_commands_skips_conflicts(monkeypatch) -> None:
@@ -86,3 +87,58 @@ def test_add_or_merge_skips_non_group_conflict() -> None:
 
     assert root.commands["auth"] is not plugin_cmd
     assert any("conflicts with an existing command" in msg for msg in warnings)
+
+
+def test_warn_about_failed_plugins_emits_one_warning_per_failure(monkeypatch) -> None:
+    import ggshield.__main__ as main_module
+    from ggshield.core.plugin.registry import PluginRegistry
+
+    registry = PluginRegistry()
+    registry.record_load_failure("machine_scan", "error relocating libsatori.so")
+    monkeypatch.setattr(main_module, "_load_plugins", lambda: registry)
+
+    warnings: list[str] = []
+    monkeypatch.setattr(main_module.ui, "display_warning", warnings.append)
+
+    main_module._warn_about_failed_plugins()
+
+    assert len(warnings) == 1
+    assert "machine_scan" in warnings[0]
+    assert "failed to load" in warnings[0].lower()
+
+
+def test_warn_about_failed_plugins_silent_when_none(monkeypatch) -> None:
+    import ggshield.__main__ as main_module
+    from ggshield.core.plugin.registry import PluginRegistry
+
+    monkeypatch.setattr(main_module, "_load_plugins", lambda: PluginRegistry())
+
+    warnings: list[str] = []
+    monkeypatch.setattr(main_module.ui, "display_warning", warnings.append)
+
+    main_module._warn_about_failed_plugins()
+
+    assert warnings == []
+
+
+def test_main_warns_then_click_rejects_unknown_plugin_command(
+    monkeypatch, capsys
+) -> None:
+    """End to end: the warning prints AND Click still rejects the missing command."""
+    import ggshield.__main__ as main_module
+    from ggshield.core.plugin.registry import PluginRegistry
+
+    registry = PluginRegistry()
+    registry.record_load_failure("machine_scan", "error relocating libsatori.so")
+    monkeypatch.setattr(main_module, "_load_plugins", lambda: registry)
+    monkeypatch.setattr(main_module, "_register_plugin_commands", lambda: None)
+    monkeypatch.setattr(main_module, "force_utf8_output", lambda: None)
+    monkeypatch.setattr(main_module, "setup_truststore", lambda: None)
+
+    with pytest.raises(SystemExit):
+        main_module.main(["machine", "scan"])
+
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert "machine_scan" in combined
+    assert "No such command" in combined
