@@ -41,10 +41,13 @@ die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 confirm() {
     [ "$ASSUME_YES" = 1 ] && return 0
-    local reply
+    local reply=""
     if [ -t 0 ]; then
         read -r -p "$1 [y/N] " reply
-    elif [ -e /dev/tty ]; then
+    elif { : </dev/tty; } 2>/dev/null; then
+        # the node can exist yet be unopenable (container/CI, no controlling
+        # tty); test the actual open so we reach the -y hint instead of dying
+        # on `reply` unbound under set -u
         read -r -p "$1 [y/N] " reply </dev/tty
     else
         die "cannot prompt for '$1' (no TTY). Re-run with -y"

@@ -157,3 +157,16 @@ Removing ggshield's configuration, cache and data is opt-in:
 | Linux / macOS | Windows  | Removes                                                           |
 | ------------- | -------- | ----------------------------------------------------------------- |
 | `--purge`     | `-Purge` | config, cache and data (`~/.gitguardian.yaml`, plugins, scan DBs) |
+
+Pass flags through the pipe with `bash -s --`:
+
+```sh
+curl -sSfL \
+  https://raw.githubusercontent.com/GitGuardian/ggshield/main/scripts/install/uninstall.sh |
+  bash -s -- --purge -y
+```
+
+The uninstaller prompts before removing anything. In a **non-interactive
+context** (CI, cron, an MDM/`launchd`/`systemd` rollback, a container with no
+terminal) it cannot prompt, so it exits without removing anything; pass
+`-y`/`--yes` (`-Yes` on Windows) to proceed unattended.
