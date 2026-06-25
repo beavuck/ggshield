@@ -1009,14 +1009,13 @@ myplugin = other:Plugin
 
         assert result is None
 
-    def test_load_from_wheel_handles_exception(self, tmp_path: Path) -> None:
-        """Test that _load_from_wheel returns None on exception."""
+    def test_load_from_wheel_propagates_import_error(self, tmp_path: Path) -> None:
+        """A failed import must propagate so the loader can record the reason."""
         import zipfile
 
         config = EnterpriseConfig()
         loader = PluginLoader(config, signature_mode=SignatureVerificationMode.DISABLED)
 
-        # Create wheel with entry point
         wheel_path = tmp_path / "test-1.0.0.whl"
         with zipfile.ZipFile(wheel_path, "w") as zf:
             zf.writestr(
@@ -1024,14 +1023,12 @@ myplugin = other:Plugin
                 "[ggshield.plugins]\ntest = test:Plugin\n",
             )
 
-        # Module import will fail
         with patch(
             "ggshield.core.plugin.loader.importlib.import_module",
             side_effect=ImportError("Module not found"),
         ):
-            result = loader._load_from_wheel(wheel_path)
-
-        assert result is None
+            with pytest.raises(ImportError, match="Module not found"):
+                loader._load_from_wheel(wheel_path)
 
     def test_extract_cache_avoids_user_home_for_sudo_e(
         self, tmp_path: Path, monkeypatch

@@ -24,6 +24,11 @@ def enable_cmd(ctx: click.Context, plugin_name: str, **kwargs: Any) -> None:
     Enabled plugins are loaded when ggshield starts and their
     features become available.
 
+    Enablement is per-user: it is stored in your user config
+    (~/.config/ggshield/enterprise_config.yaml). Enable the plugin as the
+    user that runs scans — a plugin enabled for one user (or for root) is
+    not available to another.
+
     Example:
 
         ggshield plugin enable tokenscanner

@@ -125,6 +125,13 @@ def install_cmd(
     Install from a GitHub Actions artifact (requires GITHUB_TOKEN):
 
         ggshield plugin install https://github.com/owner/repo/actions/runs/123/artifacts/456
+
+    Multi-user or scheduled hosts:
+
+        A per-user install places ggshield under the installing user's home,
+        which other users — including root and cron/systemd jobs — may not be
+        able to reach. To run scans as another user or on a schedule, install
+        and enable as that user, or use a system-wide install.
     """
     # Signature verification is strict by default. The only override is the
     # explicit per-command --allow-unsigned flag.

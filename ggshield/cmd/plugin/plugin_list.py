@@ -10,6 +10,7 @@ from ggshield.cmd.utils.common_options import add_common_options
 from ggshield.core import ui
 from ggshield.core.config.enterprise_config import EnterpriseConfig
 from ggshield.core.plugin.downloader import PluginDownloader
+from ggshield.core.plugin.hooks import get_plugin_registry
 from ggshield.core.plugin.loader import PluginLoader
 
 
@@ -44,16 +45,23 @@ def list_cmd(ctx: click.Context, **kwargs: Any) -> None:
 
     ui.display_heading("Installed Plugins")
 
+    registry = get_plugin_registry()
+    load_failures = registry.get_load_failures() if registry else {}
+
     for plugin in discovered:
         status_parts = []
 
         if plugin.version:
             status_parts.append(f"v{plugin.version}")
 
-        if plugin.is_enabled:
-            status_parts.append("enabled")
-        else:
+        if not plugin.is_enabled:
             status_parts.append("disabled")
+        elif plugin.name in load_failures:
+            status_parts.append(
+                f"enabled, FAILED TO LOAD: {load_failures[plugin.name]}"
+            )
+        else:
+            status_parts.append("enabled")
 
         source = (
             downloader.get_plugin_source(plugin.name) if plugin.wheel_path else None

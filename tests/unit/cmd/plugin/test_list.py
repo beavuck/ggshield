@@ -12,6 +12,7 @@ from ggshield.__main__ import cli
 from ggshield.core.errors import ExitCode
 from ggshield.core.plugin.client import PluginSource, PluginSourceType
 from ggshield.core.plugin.loader import DiscoveredPlugin
+from ggshield.core.plugin.registry import PluginRegistry
 
 
 def _run_list(cli_fs_runner, plugins, source_for_name=None, signature_label=None):
@@ -55,6 +56,37 @@ class TestPluginList:
         assert result.exit_code == ExitCode.SUCCESS
         assert "No plugins installed" in result.output
         assert "ggshield plugin status" in result.output
+
+    def test_list_flags_enabled_plugin_that_failed_to_load(self, cli_fs_runner):
+        """
+        GIVEN an enabled plugin recorded as failed-to-load in the registry
+        WHEN running 'ggshield plugin list'
+        THEN its line says "FAILED TO LOAD" with the reason, not just "enabled"
+        """
+        plugins = [
+            DiscoveredPlugin(
+                name="machine_scan",
+                entry_point=mock.MagicMock(),
+                wheel_path=None,
+                is_installed=True,
+                is_enabled=True,
+                version="0.59.0",
+            ),
+        ]
+        registry = PluginRegistry()
+        registry.record_load_failure(
+            "machine_scan", "manylinux wheel cannot load on a musl host"
+        )
+
+        with mock.patch.object(
+            plugin_list_module, "get_plugin_registry", return_value=registry
+        ):
+            result = _run_list(cli_fs_runner, plugins)
+
+        assert result.exit_code == ExitCode.SUCCESS
+        assert "machine_scan" in result.output
+        assert "FAILED TO LOAD" in result.output
+        assert "musl host" in result.output
 
     def test_list_pip_plugin_without_wheel(self, cli_fs_runner):
         """
