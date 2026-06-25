@@ -134,7 +134,6 @@ def _summarize_discovery(config: AIDiscovery, report: BackfillReport) -> Dict[st
         "history": {
             "parsed": report.parsed,
             "ingested": report.ingested,
-            "duplicates": report.duplicates,
             "skipped": report.skipped,
         },
     }
@@ -197,6 +196,5 @@ def print_summary(summary: Dict[str, Any]) -> None:
         click.echo(f"  • Parsed {history['parsed']:,} events")
         click.echo(
             f"  • Recorded {history['ingested']:,} events "
-            f"({history['duplicates']:,} already known, "
-            f"{history.get('skipped', 0):,} skipped)"
+            f"({history.get('skipped', 0):,} skipped)"
         )

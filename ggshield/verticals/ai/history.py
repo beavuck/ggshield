@@ -19,7 +19,6 @@ BATCH_SIZE = 500
 class BackfillReport:
     parsed: int = 0
     ingested: int = 0
-    duplicates: int = 0
     skipped: int = 0
     error: Optional[str] = None
 
@@ -43,7 +42,6 @@ def backfill_mcp_history(client: GGClient, ai_config: AIDiscovery) -> BackfillRe
             report.error = response.detail
             return False
         report.ingested += response.ingested
-        report.duplicates += response.duplicates
         report.skipped += response.skipped
         activities.clear()
         return True

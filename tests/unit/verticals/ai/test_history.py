@@ -71,7 +71,6 @@ class TestBackfillMCPHistory:
         assert len(sent) == 2
         assert report.parsed == 2
         assert report.ingested == 2
-        assert report.duplicates == 0
         assert report.skipped == 0
 
     def test_runs_every_time(self, tmp_path) -> None:
