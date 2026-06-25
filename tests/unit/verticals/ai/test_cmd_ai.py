@@ -411,7 +411,7 @@ class TestDiscoverCmd:
     @patch("ggshield.cmd.ai.discover.save_discovery_cache")
     @patch(
         "ggshield.cmd.ai.discover.backfill_mcp_history",
-        return_value=BackfillReport(parsed=3, ingested=3, duplicates=0),
+        return_value=BackfillReport(parsed=3, ingested=3),
     )
     def test_history_flag_invokes_backfill_and_surfaces_summary(
         self,
@@ -478,7 +478,7 @@ class TestDiscoverCmd:
     @patch("ggshield.cmd.ai.discover.save_discovery_cache")
     @patch(
         "ggshield.cmd.ai.discover.backfill_mcp_history",
-        return_value=BackfillReport(parsed=4, ingested=2, duplicates=1, skipped=1),
+        return_value=BackfillReport(parsed=4, ingested=2, skipped=1),
     )
     def test_json_output_includes_history_block(
         self,
@@ -496,7 +496,6 @@ class TestDiscoverCmd:
         assert parsed["history"] == {
             "parsed": 4,
             "ingested": 2,
-            "duplicates": 1,
             "skipped": 1,
         }
 
