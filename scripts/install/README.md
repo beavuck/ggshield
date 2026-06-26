@@ -39,6 +39,12 @@ The script installs the standalone build (detecting OS/arch, including Rosetta 2
 - **Windows** → `%LOCALAPPDATA%\Programs\ggshield`, added to your user PATH (no
   admin). `-Method msi` installs the system-wide MSI instead (requires admin).
 
+On Linux/macOS, `~/.local/bin` is not on everyone's `PATH` (notably macOS, and
+Debian/Ubuntu add it only when the directory already existed at login). When it
+isn't, the script doesn't fail — it prints, for your shell, the exact line to
+add and reminds you to **restart your terminal** afterwards. Set `GGSHIELD_BIN_DIR`
+to a directory already on your `PATH` to skip that step.
+
 The download is **checksum-verified** against the digest GitHub publishes for
 each asset (the install aborts if it cannot be verified). [Build provenance
 attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds)

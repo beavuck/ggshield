@@ -13,6 +13,11 @@
 
 set -euo pipefail
 
+# Every install path (and every PATH hint) is derived from $HOME; fail early
+# with a clear message rather than building paths like /.local/bin under set -u.
+# die() is not defined yet, so emit raw.
+[ -n "${HOME:-}" ] || { printf '\033[1;31merror:\033[0m HOME is not set\n' >&2; exit 1; }
+
 GITHUB_REPO="GitGuardian/ggshield"
 DEFAULT_INSTANCE="https://dashboard.gitguardian.com"
 EU_INSTANCE="https://dashboard.eu1.gitguardian.com"
@@ -25,6 +30,13 @@ STATE_FILE="$STATE_DIR/state"
 
 ASSUME_YES=0
 INSTALL_ONLY=0
+# Set when BIN_DIR is not on PATH, so the final summary can tell the user how to
+# expose it (see emit_path_hint).
+PATH_NEEDS_SETUP=0
+# Set to the path of an older ggshield that resolves ahead of the fresh one
+# while BIN_DIR *is* on PATH; emit_path_hint then says "put BIN_DIR first"
+# rather than "add it".
+SHADOWED_BY=""
 PLUGINS=()
 # honor GITGUARDIAN_INSTANCE like ggshield does; --instance overrides it
 INSTANCE="${GITGUARDIAN_INSTANCE:-}"
@@ -269,12 +281,11 @@ other install methods in scripts/install/README.md" ;;
     fi
     ln -sf "$bin" "$BIN_DIR/ggshield"
 
+    # Defer the "not on PATH" guidance to the very end (emit_path_hint) so it is
+    # the last thing the user sees, not buried before the auth/plugin output.
     case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
-    *)
-        warn "$BIN_DIR is not in your PATH. Add this to your shell profile:"
-        warn "  export PATH=\"$BIN_DIR:\$PATH\""
-        ;;
+    *) PATH_NEEDS_SETUP=1 ;;
     esac
     GGSHIELD="$BIN_DIR/ggshield"
 }
@@ -317,6 +328,70 @@ emit_plugin_hint() {
     return 0
 }
 
+# ~/.local/bin is the no-sudo convention, but it is not guaranteed to be on
+# PATH: macOS never adds it, and Debian/Ubuntu add it from ~/.profile only when
+# the directory already exists at login — so a brand-new install often needs a
+# shell restart. No sudo-less directory is on PATH across every distro and
+# macOS, so we install there and tell the user how to expose it, per shell.
+# Also handles the "$SHADOWED_BY" case: BIN_DIR is on PATH but an older ggshield
+# sits ahead of it — the same fix (prepend BIN_DIR) resolves both, only the
+# wording differs. Uses $SHELL (the login shell) rather than $0: this script
+# always runs under bash (curl | bash), which says nothing about the shell the
+# user reopens.
+emit_path_hint() {
+    # The headline goes through warn() (bold yellow, stderr) so it stands out;
+    # as an indented "# ..." comment it blended into the command block below and
+    # users missed it. The commands stay on stdout, unprefixed, to copy-paste cleanly.
+    # reload defaults to `source` (zsh/bash); `.` is the POSIX form for the
+    # generic-sh fallback. Paths are double-quoted in the emitted commands so a
+    # BIN_DIR/rc with spaces still copy-pastes correctly.
+    local rc reload="source" f headline
+    if [ -n "$SHADOWED_BY" ]; then
+        headline="an older ggshield at $SHADOWED_BY shadows the new one; put $BIN_DIR first on your PATH, then restart your terminal:"
+    else
+        headline="$BIN_DIR is not on your PATH. Add it, then restart your terminal:"
+    fi
+    case "$(basename "${SHELL:-sh}")" in
+    fish)
+        # fish persists PATH via universal variables — no file edit, no restart.
+        # --move pulls BIN_DIR to the front when it is already present (shadow case).
+        if [ -n "$SHADOWED_BY" ]; then
+            warn "an older ggshield at $SHADOWED_BY shadows the new one; move $BIN_DIR to the front with:"
+            printf '    fish_add_path --move -- "%s"\n' "$BIN_DIR"
+        else
+            warn "$BIN_DIR is not on your PATH. Add it permanently with:"
+            printf '    fish_add_path -- "%s"\n' "$BIN_DIR"
+        fi
+        return 0
+        ;;
+    zsh) rc="$HOME/.zshrc" ;;
+    bash)
+        if [ "$OS" = darwin ]; then
+            # macOS Terminal runs bash as a login shell, which reads the FIRST
+            # of these that exists. Appending to ~/.bash_profile when ~/.profile
+            # is the active file would shadow it, so reuse whichever exists.
+            rc="$HOME/.bash_profile"
+            for f in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+                if [ -e "$f" ]; then rc="$f"; break; fi
+            done
+        else
+            # Linux: interactive terminals read ~/.bashrc.
+            rc="$HOME/.bashrc"
+        fi
+        ;;
+    *)
+        rc="$HOME/.profile"
+        reload="."
+        ;;
+    esac
+    # Prepend BIN_DIR so it wins whether it was absent or merely behind an older
+    # install. A duplicate entry (shadow case) is harmless: the front one wins.
+    warn "$headline"
+    printf '    echo '\''export PATH="%s:$PATH"'\'' >> "%s"\n' "$BIN_DIR" "$rc"
+    printf '    # (or apply it to the current shell now: %s "%s")\n' "$reload" "$rc"
+    return 0
+}
+
 try_auth() {
     local inst="${INSTANCE:-$DEFAULT_INSTANCE}"
     if [ -n "${GITGUARDIAN_API_KEY:-}" ]; then
@@ -350,11 +425,17 @@ post_install() {
     fi
     say "Installed: $version_out"
 
-    # a leftover from a previous install may shadow the fresh one on PATH
+    # A ggshield from a previous install (brew, pipx, manual) sitting earlier on
+    # PATH shadows the one we just linked. The fix is the same as "not on PATH" —
+    # put BIN_DIR first — so route it through emit_path_hint with wording that
+    # names the offending binary, instead of a dead-end "fix your PATH order".
+    # Only when BIN_DIR is actually on PATH (PATH_NEEDS_SETUP still 0): if it is
+    # absent, the "not on PATH" hint already prepends it and covers this too.
     local resolved
     resolved=$(command -v ggshield 2>/dev/null || true)
-    if [ -n "$resolved" ] && [ "$resolved" != "$GGSHIELD" ]; then
-        warn "another ggshield at $resolved shadows the one just installed ($GGSHIELD); fix your PATH order"
+    if [ "$PATH_NEEDS_SETUP" = 0 ] && [ -n "$resolved" ] && [ "$resolved" != "$GGSHIELD" ]; then
+        SHADOWED_BY="$resolved"
+        PATH_NEEDS_SETUP=1
     fi
 
     if [ "$INSTALL_ONLY" = 1 ]; then
@@ -364,6 +445,7 @@ post_install() {
         [ ${#PLUGINS[@]} -gt 0 ] &&
             warn "--plugin not installed: --install-only skips authentication; run the steps below once authenticated"
         say "ggshield is installed. To finish setup:"
+        [ "$PATH_NEEDS_SETUP" = 1 ] && emit_path_hint
         emit_auth_hint
         emit_plugin_hint
         return 0
@@ -387,12 +469,15 @@ post_install() {
         plugins_pending=1
     fi
 
-    # Only nag about next steps when something actually remains.
-    if [ "$auth_ok" = 1 ] && [ "$plugins_pending" = 0 ]; then
+    # Only nag about next steps when something actually remains. A binary the
+    # shell cannot find by name is not "ready", so PATH setup counts too.
+    if [ "$auth_ok" = 1 ] && [ "$plugins_pending" = 0 ] && [ "$PATH_NEEDS_SETUP" = 0 ]; then
         say "ggshield is ready."
         return 0
     fi
     say "To finish setup:"
+    # PATH first: the other hints below assume ggshield is callable by name.
+    [ "$PATH_NEEDS_SETUP" = 1 ] && emit_path_hint
     [ "$auth_ok" = 0 ] && emit_auth_hint
     [ "$plugins_pending" = 1 ] && emit_plugin_hint
     return 0
