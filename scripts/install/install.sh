@@ -33,6 +33,10 @@ INSTALL_ONLY=0
 # Set when BIN_DIR is not on PATH, so the final summary can tell the user how to
 # expose it (see emit_path_hint).
 PATH_NEEDS_SETUP=0
+# Set to the path of an older ggshield that resolves ahead of the fresh one
+# while BIN_DIR *is* on PATH; emit_path_hint then says "put BIN_DIR first"
+# rather than "add it".
+SHADOWED_BY=""
 PLUGINS=()
 # honor GITGUARDIAN_INSTANCE like ggshield does; --instance overrides it
 INSTANCE="${GITGUARDIAN_INSTANCE:-}"
@@ -329,8 +333,11 @@ emit_plugin_hint() {
 # the directory already exists at login — so a brand-new install often needs a
 # shell restart. No sudo-less directory is on PATH across every distro and
 # macOS, so we install there and tell the user how to expose it, per shell.
-# Uses $SHELL (the login shell) rather than $0: this script always runs under
-# bash (curl | bash), which says nothing about the shell the user reopens.
+# Also handles the "$SHADOWED_BY" case: BIN_DIR is on PATH but an older ggshield
+# sits ahead of it — the same fix (prepend BIN_DIR) resolves both, only the
+# wording differs. Uses $SHELL (the login shell) rather than $0: this script
+# always runs under bash (curl | bash), which says nothing about the shell the
+# user reopens.
 emit_path_hint() {
     # The headline goes through warn() (bold yellow, stderr) so it stands out;
     # as an indented "# ..." comment it blended into the command block below and
@@ -338,12 +345,23 @@ emit_path_hint() {
     # reload defaults to `source` (zsh/bash); `.` is the POSIX form for the
     # generic-sh fallback. Paths are double-quoted in the emitted commands so a
     # BIN_DIR/rc with spaces still copy-pastes correctly.
-    local rc reload="source" f
+    local rc reload="source" f headline
+    if [ -n "$SHADOWED_BY" ]; then
+        headline="an older ggshield at $SHADOWED_BY shadows the new one; put $BIN_DIR first on your PATH, then restart your terminal:"
+    else
+        headline="$BIN_DIR is not on your PATH. Add it, then restart your terminal:"
+    fi
     case "$(basename "${SHELL:-sh}")" in
     fish)
         # fish persists PATH via universal variables — no file edit, no restart.
-        warn "$BIN_DIR is not on your PATH. Add it permanently with:"
-        printf '    fish_add_path -- "%s"\n' "$BIN_DIR"
+        # --move pulls BIN_DIR to the front when it is already present (shadow case).
+        if [ -n "$SHADOWED_BY" ]; then
+            warn "an older ggshield at $SHADOWED_BY shadows the new one; move $BIN_DIR to the front with:"
+            printf '    fish_add_path --move -- "%s"\n' "$BIN_DIR"
+        else
+            warn "$BIN_DIR is not on your PATH. Add it permanently with:"
+            printf '    fish_add_path -- "%s"\n' "$BIN_DIR"
+        fi
         return 0
         ;;
     zsh) rc="$HOME/.zshrc" ;;
@@ -366,7 +384,9 @@ emit_path_hint() {
         reload="."
         ;;
     esac
-    warn "$BIN_DIR is not on your PATH. Add it, then restart your terminal:"
+    # Prepend BIN_DIR so it wins whether it was absent or merely behind an older
+    # install. A duplicate entry (shadow case) is harmless: the front one wins.
+    warn "$headline"
     printf '    echo '\''export PATH="%s:$PATH"'\'' >> "%s"\n' "$BIN_DIR" "$rc"
     printf '    # (or apply it to the current shell now: %s "%s")\n' "$reload" "$rc"
     return 0
@@ -405,11 +425,17 @@ post_install() {
     fi
     say "Installed: $version_out"
 
-    # a leftover from a previous install may shadow the fresh one on PATH
+    # A ggshield from a previous install (brew, pipx, manual) sitting earlier on
+    # PATH shadows the one we just linked. The fix is the same as "not on PATH" —
+    # put BIN_DIR first — so route it through emit_path_hint with wording that
+    # names the offending binary, instead of a dead-end "fix your PATH order".
+    # Only when BIN_DIR is actually on PATH (PATH_NEEDS_SETUP still 0): if it is
+    # absent, the "not on PATH" hint already prepends it and covers this too.
     local resolved
     resolved=$(command -v ggshield 2>/dev/null || true)
-    if [ -n "$resolved" ] && [ "$resolved" != "$GGSHIELD" ]; then
-        warn "another ggshield at $resolved shadows the one just installed ($GGSHIELD); fix your PATH order"
+    if [ "$PATH_NEEDS_SETUP" = 0 ] && [ -n "$resolved" ] && [ "$resolved" != "$GGSHIELD" ]; then
+        SHADOWED_BY="$resolved"
+        PATH_NEEDS_SETUP=1
     fi
 
     if [ "$INSTALL_ONLY" = 1 ]; then
