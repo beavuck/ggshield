@@ -332,6 +332,9 @@ emit_plugin_hint() {
 # Uses $SHELL (the login shell) rather than $0: this script always runs under
 # bash (curl | bash), which says nothing about the shell the user reopens.
 emit_path_hint() {
+    # The headline goes through warn() (bold yellow, stderr) so it stands out;
+    # as an indented "# ..." comment it blended into the command block below and
+    # users missed it. The commands stay on stdout, unprefixed, to copy-paste cleanly.
     # reload defaults to `source` (zsh/bash); `.` is the POSIX form for the
     # generic-sh fallback. Paths are double-quoted in the emitted commands so a
     # BIN_DIR/rc with spaces still copy-pastes correctly.
@@ -339,7 +342,7 @@ emit_path_hint() {
     case "$(basename "${SHELL:-sh}")" in
     fish)
         # fish persists PATH via universal variables — no file edit, no restart.
-        printf '    # %s is not on your PATH; add it permanently with:\n' "$BIN_DIR"
+        warn "$BIN_DIR is not on your PATH. Add it permanently with:"
         printf '    fish_add_path -- "%s"\n' "$BIN_DIR"
         return 0
         ;;
@@ -363,7 +366,7 @@ emit_path_hint() {
         reload="."
         ;;
     esac
-    printf '    # %s is not on your PATH; add it, then restart your terminal:\n' "$BIN_DIR"
+    warn "$BIN_DIR is not on your PATH. Add it, then restart your terminal:"
     printf '    echo '\''export PATH="%s:$PATH"'\'' >> "%s"\n' "$BIN_DIR" "$rc"
     printf '    # (or apply it to the current shell now: %s "%s")\n' "$reload" "$rc"
     return 0
