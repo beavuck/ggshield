@@ -216,7 +216,7 @@ def _load_config_dict(
     elif config_version == 1:
         deprecation_messages.append(
             f"{config_path} uses a deprecated configuration file format."
-            " Run `ggshield config migrate` to migrate it to the latest version."
+            f" Run `ggshield --config-path {config_path} config migrate` to migrate it to the latest version."
         )
         dct = convert_v1_config_dict(dct, deprecation_messages)
     else:
