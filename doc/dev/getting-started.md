@@ -4,17 +4,19 @@
 
 1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
-1. Install the [pre-commit framework](https://pre-commit.com/#install)
+2. Install the [pre-commit framework](https://pre-commit.com/#install)
 
-1. Fork and clone the repository
+3. Fork and clone the repository
 
-1. Install dev packages and environment
+4. Install dev packages and environment
 
    ```sh
-   uv sync
+   uv venv .venv
+   source .venv/bin/activate
+   uv sync --all-groups
    ```
 
-1. Install pre-commit hooks
+5. Install pre-commit hooks
 
    ```sh
    pre-commit install
