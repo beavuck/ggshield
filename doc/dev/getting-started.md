@@ -11,9 +11,8 @@
 4. Install dev packages and environment
 
    ```sh
-   uv venv .venv
-   source .venv/bin/activate
    uv sync --all-groups
+   source .venv/bin/activate
    ```
 
 5. Install pre-commit hooks
