@@ -6,6 +6,7 @@ from typing import Dict, Optional, Union
 
 from ggshield import __version__
 from ggshield.core.git_hooks.ci.repository import get_repository_url_from_ci
+from ggshield.core.machine_id import _get_machine_id, _get_username
 from ggshield.utils.git_shell import get_repository_url_from_path
 from ggshield.utils.os import get_os_info
 
@@ -47,6 +48,8 @@ class ScanContext:
             "OS-Name": self.os_name,
             "OS-Version": self.os_version,
             "Python-Version": self.python_version,
+            "Machine-Id": _get_machine_id(),
+            "Machine-Username": _get_username(),
         }
         repo_url = self._get_repository_url()
         if repo_url is not None:

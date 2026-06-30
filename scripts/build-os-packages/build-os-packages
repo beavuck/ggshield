@@ -68,7 +68,11 @@ EOF
 }
 
 read_version() {
-    VERSION=$(grep -o "[0-9]*\.[0-9]*\.[0-9]*" "$ROOT_DIR/ggshield/__init__.py")
+    # Match the full `__version__ = "X.Y.Z"` assignment, not just any X.Y.Z in
+    # the file: other lines (type hints, examples in messages, ...) can hold
+    # version-like substrings that would otherwise corrupt VERSION.
+    VERSION=$(sed -n 's/^__version__ *= *"\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' \
+        "$ROOT_DIR/ggshield/__init__.py")
     if [ -n "$VERSION_SUFFIX" ] ; then
         VERSION="${VERSION}${VERSION_SUFFIX}"
     fi
