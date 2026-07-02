@@ -10,9 +10,14 @@ from click.testing import CliRunner
 from pygitguardian.models import HealthCheckResponse
 
 from ggshield.__main__ import cli
-from ggshield.cmd.install import get_default_global_hook_dir_path, install_local
+from ggshield.cmd.install import (
+    LOCAL_HOOK_SNIPPET,
+    get_default_global_hook_dir_path,
+    install_local,
+)
 from ggshield.core.errors import ExitCode, MissingTokenError
 from ggshield.verticals.ai.installation import _is_interactive
+from tests.repository import Repository
 from tests.unit.conftest import assert_invoke_exited_with, assert_invoke_ok
 
 
@@ -295,7 +300,10 @@ class TestInstallGlobal:
 
         hook_path = get_default_global_hook_dir_path() / hook_type
         hook_str = hook_path.read_text()
-        assert f"if [ -f .git/hooks/{hook_type} ]; then" in hook_str
+        assert (
+            f"_ggshield_local_hook=$(git rev-parse --git-common-dir)/hooks/{hook_type}"
+            in hook_str
+        )
         assert f"ggshield secret scan {hook_type}" in hook_str
 
         assert f"{hook_type} successfully added in {hook_path}\n" in result.output
@@ -474,7 +482,10 @@ class TestInstallSystem:
         hook_path = get_default_system_hook_dir_path() / "pre-commit"
         assert hook_path.is_file()
         hook_str = hook_path.read_text()
-        assert "if [ -f .git/hooks/pre-commit ]; then" in hook_str
+        assert (
+            "_ggshield_local_hook=$(git rev-parse --git-common-dir)/hooks/pre-commit"
+            in hook_str
+        )
         assert "ggshield secret scan pre-commit" in hook_str
 
         out = subprocess.check_output(
@@ -517,3 +528,71 @@ class TestSystemDataDir:
 
         monkeypatch.delenv("GG_SYSTEM_DATA_DIR", raising=False)
         assert get_system_data_dir().name == "ggshield"
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="the global hook is a POSIX /bin/sh script"
+)
+class TestLocalHookSnippet:
+    """Behavior of ``LOCAL_HOOK_SNIPPET``, the code the global/system hook injects
+    to run the repository's own hook.
+
+    Regression coverage for the worktree bug: in a linked worktree ``.git`` is a
+    file, not a directory, so resolving the local hook through a hardcoded
+    ``.git/hooks/<type>`` path silently skipped it. The snippet resolves the path
+    with ``git rev-parse --git-common-dir`` instead.
+    """
+
+    @staticmethod
+    def _repo_with_local_hook(tmp_path: Path) -> "tuple[Repository, Path]":
+        """Create a committed repo with a repo-local pre-commit hook that records
+        when it runs; return the repo and the hook's sentinel path."""
+        repo = Repository.create(tmp_path / "repo")
+        repo.create_commit()
+        sentinel = tmp_path / "local-hook-ran"
+        hook = repo.path / ".git" / "hooks" / "pre-commit"
+        hook.parent.mkdir(parents=True, exist_ok=True)
+        hook.write_text(f'#!/bin/sh\ntouch "{sentinel}"\n')
+        hook.chmod(0o755)
+        return repo, sentinel
+
+    @staticmethod
+    def _run_snippet(run_dir: Path, script: Path) -> "subprocess.CompletedProcess[str]":
+        """Run the snippet from ``run_dir`` the way the global hook would."""
+        script.write_text(
+            "#!/bin/sh\n" + LOCAL_HOOK_SNIPPET.format(hook_type="pre-commit")
+        )
+        script.chmod(0o755)
+        return subprocess.run(
+            [str(script)], cwd=run_dir, capture_output=True, text=True
+        )
+
+    def test_runs_local_hook_in_main_worktree(self, tmp_path):
+        """
+        GIVEN a repository whose .git/hooks/pre-commit exists
+        WHEN the global hook snippet runs from the repository root
+        THEN the local hook is invoked
+        """
+        repo, sentinel = self._repo_with_local_hook(tmp_path)
+
+        result = self._run_snippet(repo.path, tmp_path / "snippet.sh")
+
+        assert result.returncode == 0, result.stderr
+        assert sentinel.exists()
+
+    def test_runs_local_hook_in_linked_worktree(self, tmp_path):
+        """
+        GIVEN a linked worktree, where .git is a file pointer rather than a directory
+        WHEN the global hook snippet runs from the worktree root
+        THEN the local hook, shared through the common git dir, is still invoked
+        """
+        repo, sentinel = self._repo_with_local_hook(tmp_path)
+
+        worktree = tmp_path / "worktree"
+        repo.git("worktree", "add", worktree, "-b", "feature")
+        assert (worktree / ".git").is_file()  # precondition the fix depends on
+
+        result = self._run_snippet(worktree, tmp_path / "snippet.sh")
+
+        assert result.returncode == 0, result.stderr
+        assert sentinel.exists()
