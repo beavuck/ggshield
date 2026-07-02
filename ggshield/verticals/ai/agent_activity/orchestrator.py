@@ -35,7 +35,6 @@ class AgentActivityBatchResult:
 class AgentActivityReport:
     parsed: int = 0
     ingested: int = 0
-    duplicates: int = 0
     failed_batches: int = 0
     # Records the server could not scan and dropped (never stored).
     dropped: int = 0

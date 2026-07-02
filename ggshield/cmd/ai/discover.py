@@ -44,12 +44,20 @@ from ggshield.verticals.ai.models import Scope
     default=False,
     help="Also backfill historical MCP tool calls parsed from agent transcripts.",
 )
+@click.option(
+    "--activity",
+    "scan_activity",
+    is_flag=True,
+    default=False,
+    help="[Experimental] Also backfill all agent activity events. Will later be merged with --history.",
+)
 @add_common_options()
 @click.pass_context
 def discover_cmd(
     ctx: click.Context,
     use_json: bool,
     scan_history: bool,
+    scan_activity: bool,
     **kwargs: Any,
 ) -> None:
     """
@@ -82,6 +90,7 @@ def discover_cmd(
         save_discovery_cache(config)
         if scan_history:
             backfill_report = backfill_mcp_history(client, config)
+        if scan_activity:
             activity_report = collect_agent_activity(
                 client, config.user, AGENTS.values()
             )
