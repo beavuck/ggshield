@@ -25,8 +25,9 @@ from ggshield.verticals.ai.installation import (
 # not make use of any Bash extension, such as double square brackets in
 # `if` statements.
 LOCAL_HOOK_SNIPPET = """
-if [ -f .git/hooks/{hook_type} ]; then
-    if ! .git/hooks/{hook_type} "$@"; then
+_ggshield_local_hook=$(git rev-parse --git-common-dir)/hooks/{hook_type}
+if [ -f "$_ggshield_local_hook" ]; then
+    if ! "$_ggshield_local_hook" "$@"; then
         echo 'Local {hook_type} hook failed, please see output above'
         exit 1
     fi

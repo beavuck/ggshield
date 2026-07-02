@@ -295,7 +295,10 @@ class TestInstallGlobal:
 
         hook_path = get_default_global_hook_dir_path() / hook_type
         hook_str = hook_path.read_text()
-        assert f"if [ -f .git/hooks/{hook_type} ]; then" in hook_str
+        assert (
+            f"_ggshield_local_hook=$(git rev-parse --git-common-dir)/hooks/{hook_type}"
+            in hook_str
+        )
         assert f"ggshield secret scan {hook_type}" in hook_str
 
         assert f"{hook_type} successfully added in {hook_path}\n" in result.output
@@ -474,7 +477,10 @@ class TestInstallSystem:
         hook_path = get_default_system_hook_dir_path() / "pre-commit"
         assert hook_path.is_file()
         hook_str = hook_path.read_text()
-        assert "if [ -f .git/hooks/pre-commit ]; then" in hook_str
+        assert (
+            "_ggshield_local_hook=$(git rev-parse --git-common-dir)/hooks/pre-commit"
+            in hook_str
+        )
         assert "ggshield secret scan pre-commit" in hook_str
 
         out = subprocess.check_output(
