@@ -115,10 +115,10 @@ class TestPathScan:
         assert result.exception
 
         if validity:
-            assert '"validity": "valid"' in result.output
+            assert '"validity": "valid"' in result.stdout
         else:
-            assert '"validity": "valid"' not in result.output
-        json.loads(result.output)
+            assert '"validity": "valid"' not in result.stdout
+        json.loads(result.stdout)
 
     @pytest.mark.parametrize("json_output", [False, True])
     def test_scan_file_secret_exit_zero(self, cli_fs_runner, json_output):
@@ -143,7 +143,7 @@ class TestPathScan:
             assert_invoke_ok(result)
             assert not result.exception
             if json_output:
-                json.loads(result.output)
+                json.loads(result.stdout)
 
     def test_files_abort(self, cli_fs_runner):
         self.create_files()
@@ -214,7 +214,7 @@ secret:
         )
 
         assert_invoke_exited_with(result, ExitCode.USAGE_ERROR)
-        assert "An ignored file or directory cannot be scanned." in result.stdout
+        assert "An ignored file or directory cannot be scanned." in result.output
         scan_mock.assert_not_called()
 
     def test_instance_option(self, cli_fs_runner):

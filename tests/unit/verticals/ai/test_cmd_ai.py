@@ -162,7 +162,9 @@ class TestAiHookCmd:
         )
 
         assert result.exit_code == 0
-        response = json.loads(result.output.strip().splitlines()[-1])
+        # These fail-open cases print a warning to stderr; on click < 8.2 the default
+        # runner merges it into stdout, so parse the JSON payload from the last line.
+        response = json.loads(result.stdout.strip().splitlines()[-1])
         assert response["continue"] is True
         assert "NOT scanned" in response["systemMessage"]
         assert "ggshield auth login" in response["systemMessage"]
@@ -188,7 +190,9 @@ class TestAiHookCmd:
         )
 
         assert result.exit_code == 0
-        response = json.loads(result.output.strip().splitlines()[-1])
+        # These fail-open cases print a warning to stderr; on click < 8.2 the default
+        # runner merges it into stdout, so parse the JSON payload from the last line.
+        response = json.loads(result.stdout.strip().splitlines()[-1])
         assert response["continue"] is True
         assert "NOT scanned" in response["systemMessage"]
 
@@ -261,7 +265,7 @@ class TestDiscoverCmd:
         result = runner.invoke(cli, ["ai", "discover", "--json"])
 
         assert result.exit_code == 0
-        parsed = json.loads(result.output)
+        parsed = json.loads(result.stdout)
         assert "agents" in parsed
         assert "servers" in parsed
 
@@ -397,7 +401,7 @@ class TestDiscoverCmd:
         result = runner.invoke(cli, ["ai", "discover", "--json"])
 
         assert result.exit_code == 0
-        parsed = json.loads(result.output)
+        parsed = json.loads(result.stdout)
         assert parsed["agents"] == [{"name": "Cursor", "hooks_installed": True}]
         assert len(parsed["servers"]) == 1
         assert parsed["servers"][0]["name"] == "My MCP"
@@ -493,7 +497,7 @@ class TestDiscoverCmd:
         result = runner.invoke(cli, ["ai", "discover", "--json", "--history"])
 
         assert result.exit_code == 0
-        parsed = json.loads(result.output)
+        parsed = json.loads(result.stdout)
         assert parsed["history"] == {
             "parsed": 4,
             "ingested": 2,
