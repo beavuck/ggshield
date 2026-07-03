@@ -596,3 +596,131 @@ class TestLocalHookSnippet:
 
         assert result.returncode == 0, result.stderr
         assert sentinel.exists()
+
+
+class TestHooksPathShadow:
+    BASE = "ggshield.cmd.install"
+
+    def test_configured_hook_dir_path_returns_value(self):
+        from ggshield.cmd.install import get_configured_hook_dir_path
+
+        # Pin _get_repo_root to None so the value is returned verbatim (no
+        # relative-path resolution); on Windows "/some/hooks" is not absolute and
+        # would otherwise be resolved against the repo root.
+        with patch(f"{self.BASE}.git", return_value="/some/hooks"), patch(
+            f"{self.BASE}._get_repo_root", return_value=None
+        ):
+            assert get_configured_hook_dir_path() == Path("/some/hooks")
+
+    def test_configured_hook_dir_path_none_when_unset(self):
+        from ggshield.cmd.install import get_configured_hook_dir_path
+
+        with patch(
+            f"{self.BASE}.git",
+            side_effect=subprocess.CalledProcessError(1, "git"),
+        ):
+            assert get_configured_hook_dir_path() is None
+
+    def test_is_ggshield_hook_dir_true(self, tmp_path):
+        from ggshield.cmd.install import is_ggshield_hook_dir
+
+        (tmp_path / "pre-commit").write_text(
+            "#!/bin/sh\nggshield secret scan pre-commit\n"
+        )
+        assert is_ggshield_hook_dir(tmp_path) is True
+
+    def test_is_ggshield_hook_dir_false_for_foreign(self, tmp_path):
+        from ggshield.cmd.install import is_ggshield_hook_dir
+
+        (tmp_path / "pre-commit").write_text("#!/bin/sh\nother-tool\n")
+        assert is_ggshield_hook_dir(tmp_path) is False
+
+    def test_shadow_none_when_no_override(self):
+        from ggshield.cmd.install import get_shadowing_hooks_path
+
+        with patch(f"{self.BASE}.get_configured_hook_dir_path", return_value=None):
+            assert get_shadowing_hooks_path() is None
+
+    def test_shadow_none_when_effective_is_ggshield(self, tmp_path):
+        from ggshield.cmd.install import get_shadowing_hooks_path
+
+        (tmp_path / "pre-commit").write_text(
+            "#!/bin/sh\nggshield secret scan pre-commit\n"
+        )
+        with patch(f"{self.BASE}.get_configured_hook_dir_path", return_value=tmp_path):
+            assert get_shadowing_hooks_path() is None
+
+    def test_shadow_returns_path_when_foreign(self, tmp_path):
+        from ggshield.cmd.install import get_shadowing_hooks_path
+
+        husky = tmp_path / ".husky" / "_"
+        husky.mkdir(parents=True)
+        with patch(f"{self.BASE}.get_configured_hook_dir_path", return_value=husky):
+            assert get_shadowing_hooks_path() == husky
+
+    def test_configured_hook_dir_path_none_on_any_git_error(self):
+        from ggshield.cmd.install import get_configured_hook_dir_path
+        from ggshield.utils.git_shell import GitCommandTimeoutExpired
+
+        with patch(f"{self.BASE}.git", side_effect=GitCommandTimeoutExpired("boom")):
+            assert get_configured_hook_dir_path() is None
+
+    def test_configured_hook_dir_path_resolves_relative_against_repo_root(
+        self, tmp_path
+    ):
+        from ggshield.cmd.install import get_configured_hook_dir_path
+
+        with patch(f"{self.BASE}.git", return_value=".husky/_"), patch(
+            f"{self.BASE}._get_repo_root", return_value=tmp_path
+        ):
+            assert get_configured_hook_dir_path() == tmp_path / ".husky" / "_"
+
+    def test_configured_hook_dir_path_relative_unchanged_without_repo_root(self):
+        from ggshield.cmd.install import get_configured_hook_dir_path
+
+        with patch(f"{self.BASE}.git", return_value=".husky/_"), patch(
+            f"{self.BASE}._get_repo_root", return_value=None
+        ):
+            assert get_configured_hook_dir_path() == Path(".husky/_")
+
+    def test_is_ggshield_hook_dir_true_for_husky_parent(self, tmp_path):
+        from ggshield.cmd.install import is_ggshield_hook_dir
+
+        husky = tmp_path / ".husky"
+        wrappers = husky / "_"
+        wrappers.mkdir(parents=True)
+        # Husky's `_` wrapper does not run ggshield directly...
+        (wrappers / "pre-commit").write_text("#!/bin/sh\n. ../pre-commit\n")
+        # ...but the user hook ggshield writes into the parent does.
+        (husky / "pre-commit").write_text(
+            "#!/bin/sh\nggshield secret scan pre-commit\n"
+        )
+        assert is_ggshield_hook_dir(wrappers) is True
+
+    def test_is_ggshield_hook_dir_false_for_husky_without_ggshield(self, tmp_path):
+        from ggshield.cmd.install import is_ggshield_hook_dir
+
+        husky = tmp_path / ".husky"
+        wrappers = husky / "_"
+        wrappers.mkdir(parents=True)
+        (wrappers / "pre-commit").write_text("#!/bin/sh\n. ../pre-commit\n")
+        (husky / "pre-commit").write_text("#!/bin/sh\nnpx lint-staged\n")
+        assert is_ggshield_hook_dir(wrappers) is False
+
+    def test_hook_invokes_ggshield(self, tmp_path):
+        from ggshield.cmd.install import hook_invokes_ggshield
+
+        ours = tmp_path / "pre-commit"
+        ours.write_text("#!/bin/sh\nggshield secret scan pre-commit\n")
+        assert hook_invokes_ggshield(ours) is True
+        assert hook_invokes_ggshield(tmp_path / "pre-push") is False
+
+    def test_hook_invokes_ggshield_false_on_oserror(self, tmp_path):
+        from ggshield.cmd.install import hook_invokes_ggshield
+
+        ours = tmp_path / "pre-commit"
+        ours.write_text("#!/bin/sh\nggshield secret scan pre-commit\n")
+        # An unreadable file (permissions, race, special file) must not crash the
+        # caller — `errors="ignore"` only covers decoding, not the read itself.
+        with patch.object(Path, "read_text", side_effect=OSError("denied")):
+            assert hook_invokes_ggshield(ours) is False
