@@ -240,6 +240,15 @@ def _detect_agent(data: Dict[str, Any]) -> Agent:
     raise ValueError("Unrecognized agent")
 
 
+def build_agent_headers(content: str) -> Dict[str, str]:
+    """Additional headers to identify the agent."""
+    try:
+        agent = _detect_agent(json.loads(content))
+        return {"Agent-Name": agent.name}
+    except Exception:
+        return {}
+
+
 def _parse_user_prompt(
     content: str, event_type: EventType, agent: Agent, timestamp: datetime
 ) -> List[HookPayload]:
