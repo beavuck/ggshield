@@ -38,6 +38,12 @@ def _get_index_urls() -> List[str]:
     return index_urls
 
 
+def _enforce_deadline(deadline: float) -> None:  # pragma: no cover
+    """Give up once the PYPI_DOWNLOAD_TIMEOUT budget is spent."""
+    if time.monotonic() > deadline:
+        raise TimeoutError(f"timed out after {PYPI_DOWNLOAD_TIMEOUT}s")
+
+
 def _download_link(
     finder: PackageFinder, link: Link, dest: Path, deadline: float
 ) -> None:
@@ -47,10 +53,7 @@ def _download_link(
         response.raise_for_status()
         with dest.open("wb") as f:
             for chunk in response.iter_bytes():
-                if time.monotonic() > deadline:
-                    raise TimeoutError(
-                        f"download timed out after {PYPI_DOWNLOAD_TIMEOUT}s"
-                    )
+                _enforce_deadline(deadline)
                 f.write(chunk)
 
 
@@ -76,11 +79,9 @@ def save_package_to_tmp(temp_dir: Path, package_name: str) -> None:
     if best_match is None:
         raise UnexpectedError(f'Could not find a package matching "{package_name}".')
 
-    if time.monotonic() > deadline:
-        raise UnexpectedError(f'Looking up "{package_name}" timed out')
-
     archive_path = temp_dir / best_match.link.filename
     try:
+        _enforce_deadline(deadline)
         _download_link(finder, best_match.link, archive_path, deadline)
     except Exception as exc:
         raise UnexpectedError(f'Failed to download "{package_name}": {exc}')

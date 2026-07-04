@@ -7,7 +7,12 @@ from zipfile import ZipFile
 import pytest
 from packaging.requirements import InvalidRequirement
 
-from ggshield.cmd.secret.scan.pypi import get_files_from_package, save_package_to_tmp
+from ggshield.cmd.secret.scan.pypi import (
+    DEFAULT_INDEX_URL,
+    _get_index_urls,
+    get_files_from_package,
+    save_package_to_tmp,
+)
 from ggshield.core.errors import UnexpectedError
 
 
@@ -23,6 +28,29 @@ def _set_stream_response(finder: MagicMock, chunks: list[bytes]) -> None:
     response = MagicMock()
     response.iter_bytes.return_value = list(chunks)
     finder.session.get_stream.return_value.__enter__.return_value = response
+
+
+class TestGetIndexUrls:
+    def test_defaults_to_pypi(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("PIP_INDEX_URL", raising=False)
+        monkeypatch.delenv("PIP_EXTRA_INDEX_URL", raising=False)
+
+        assert _get_index_urls() == [DEFAULT_INDEX_URL]
+
+    def test_honors_index_and_extra_index_urls(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PIP_INDEX_URL", "https://primary.test/simple/")
+        monkeypatch.setenv(
+            "PIP_EXTRA_INDEX_URL",
+            "https://extra1.test/simple/ https://extra2.test/simple/",
+        )
+
+        assert _get_index_urls() == [
+            "https://primary.test/simple/",
+            "https://extra1.test/simple/",
+            "https://extra2.test/simple/",
+        ]
 
 
 @patch("ggshield.cmd.secret.scan.pypi.PackageFinder")
@@ -113,3 +141,13 @@ class TestGetFilesFromPackage:
         scanned_names = {scannable.path.name for scannable in files}
         assert "hello.py" in scanned_names
         assert archive_path.name not in scanned_names
+
+    def test_raises_when_archive_cannot_be_unpacked(self, tmp_path: Path) -> None:
+        (tmp_path / f"{self.package_name}.tar.gz").write_bytes(b"not an archive")
+
+        with pytest.raises(UnexpectedError):
+            get_files_from_package(
+                archive_dir=tmp_path,
+                package_name=self.package_name,
+                exclusion_regexes=set(),
+            )
