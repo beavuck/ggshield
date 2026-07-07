@@ -103,12 +103,12 @@ def show_results(
 
 
 def show_error_during_scan(error: Exception):
-    if isinstance(error, HTTPError) and error.response.status_code == 429:
+    response = error.response if isinstance(error, HTTPError) else None
+    if response is not None and response.status_code == 429:
         error_message = "These are partial results: Quota exceeded"
-        if error.response.headers.get("RateLimit-Query") is not None:
-            error_message += (
-                f" required {error.response.headers.get('RateLimit-Query')} credits."
-            )
+        rate_limit = response.headers.get("RateLimit-Query")
+        if rate_limit is not None:
+            error_message += f" required {rate_limit} credits."
         else:
             error_message += "."
         ui.display_warning(error_message)
