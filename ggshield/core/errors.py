@@ -121,7 +121,7 @@ class AuthExpiredError(AuthError):
     def __init__(self, instance: str):
         super().__init__(
             instance,
-            f"Instance '{instance}' authentication expired, please authenticate again.",
+            f"Instance '{instance}' authentication expired, please authenticate again (ggshield auth login).",
         )
 
 
