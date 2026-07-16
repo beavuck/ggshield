@@ -18,6 +18,7 @@ from ggshield.core.machine_id import (
     _read_first_nonempty_line,
     _read_trusted_cache_line,
     _windows_binary,
+    _write_machine_id_cache,
 )
 
 
@@ -563,6 +564,30 @@ class TestReadTrustedCacheLine:
         os.mkfifo(fifo, 0o600)
         assert _read_trusted_cache_line(fifo) is None
 
+    def test_blank_file_yields_none(self, tmp_path: Path):
+        f = tmp_path / "machine_id"
+        f.write_text("\n  \n")
+        os.chmod(f, 0o600)
+        assert _read_trusted_cache_line(f) is None
+
+    def test_unreadable_home_dir_rejects_unowned_file(self, tmp_path: Path):
+        # If the home directory can't be stat'ed, the home-owner rule can't
+        # vouch for the file: only self- or root-owned files remain trusted.
+        f = tmp_path / "machine_id"
+        f.write_text("cached-id\n")
+        os.chmod(f, 0o600)
+        with patch(
+            "ggshield.core.machine_id.os.stat", side_effect=OSError("denied")
+        ), patch("ggshield.core.machine_id.os.geteuid", return_value=os.geteuid() + 1):
+            assert _read_trusted_cache_line(f) is None
+
+    def test_read_oserror_yields_none(self, tmp_path: Path):
+        f = tmp_path / "machine_id"
+        f.write_text("cached-id\n")
+        os.chmod(f, 0o600)
+        with patch("ggshield.core.machine_id.os.read", side_effect=OSError("io error")):
+            assert _read_trusted_cache_line(f) is None
+
 
 # ---------------------------------------------------------------------------
 # Cache write hardening
@@ -635,6 +660,23 @@ class TestCacheWriteHardening:
         ), patch("ggshield.core.machine_id.os.geteuid", return_value=0):
             result = _get_machine_id()
         assert result == "users-own-id"
+        assert cache.read_text() == "users-own-id\n"
+        assert (cache.stat().st_mode & 0o777) == 0o600
+
+    def test_write_never_touches_a_foreign_owned_file(
+        self, _mock_linux: MagicMock, _mock_platform: MagicMock, tmp_path: Path
+    ):
+        # The write side stays strict even though the read side adopts: a run
+        # under another euid must not unlink or rewrite this user's file.
+        ggshield_dir = tmp_path / ".ggshield"
+        ggshield_dir.mkdir()
+        cache = ggshield_dir / "machine_id"
+        cache.write_text("users-own-id\n")
+        os.chmod(cache, 0o600)
+        with patch(
+            "ggshield.core.machine_id.os.geteuid", return_value=os.geteuid() + 1
+        ):
+            _write_machine_id_cache(cache, "intruder-id")
         assert cache.read_text() == "users-own-id\n"
         assert (cache.stat().st_mode & 0o777) == 0o600
 
