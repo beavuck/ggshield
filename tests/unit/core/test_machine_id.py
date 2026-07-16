@@ -12,6 +12,7 @@ from ggshield.core.machine_id import (
     _get_macos_system_id,
     _get_username,
     _get_windows_system_id,
+    _is_trusted_cache_owner,
     _normalize_uuid,
     _parse_wmic_uuid,
     _read_first_nonempty_line,
@@ -530,14 +531,19 @@ class TestReadTrustedCacheLine:
     def test_missing_file_is_rejected(self, tmp_path: Path):
         assert _read_trusted_cache_line(tmp_path / "nope") is None
 
-    def test_foreign_owned_file_is_rejected(self, tmp_path: Path):
-        f = tmp_path / "machine_id"
-        f.write_text("cached-id\n")
-        os.chmod(f, 0o600)
-        with patch(
-            "ggshield.core.machine_id.os.geteuid", return_value=os.geteuid() + 1
-        ):
-            assert _read_trusted_cache_line(f) is None
+    def test_owner_acceptance_rules(self):
+        # Identity is client-asserted end to end (the server stores whatever
+        # machine_id a client reports), so an own-files-only rule buys no
+        # integrity. The real requirement is that no OTHER unprivileged user
+        # can plant the file: trusted owners are the current user, root, and
+        # the owner of the home the cache lives in — so sudo -E runs and
+        # plain user runs adopt each other's id instead of diverging.
+        assert _is_trusted_cache_owner(file_uid=1000, euid=1000, home_uid=1000)
+        assert _is_trusted_cache_owner(file_uid=0, euid=1000, home_uid=1000)
+        assert _is_trusted_cache_owner(file_uid=1000, euid=0, home_uid=1000)
+        assert not _is_trusted_cache_owner(file_uid=1001, euid=1000, home_uid=1000)
+        assert not _is_trusted_cache_owner(file_uid=1001, euid=0, home_uid=1000)
+        assert not _is_trusted_cache_owner(file_uid=1001, euid=1000, home_uid=None)
 
     def test_symlink_is_rejected_even_to_trusted_target(self, tmp_path: Path):
         # stat()-then-open() by path follows symlinks: under sudo -E a planted
@@ -591,7 +597,7 @@ class TestCacheWriteHardening:
             second = _get_machine_id()
         assert first == second
         cache = tmp_path / ".ggshield" / "machine_id"
-        assert (cache.stat().st_mode & 0o777) == 0o600
+        assert (cache.stat().st_mode & 0o777) == 0o644
 
     def test_rejected_self_owned_cache_is_replaced_with_0600(
         self, _mock_linux: MagicMock, _mock_platform: MagicMock, tmp_path: Path
@@ -610,14 +616,15 @@ class TestCacheWriteHardening:
             second = _get_machine_id()
         assert first != "attacker-planted"
         assert first == second
-        assert (cache.stat().st_mode & 0o777) == 0o600
+        assert (cache.stat().st_mode & 0o777) == 0o644
         assert cache.read_text().strip() == first
 
-    def test_foreign_owned_cache_is_never_written(
+    def test_privileged_run_adopts_home_owners_cache_without_writing(
         self, _mock_linux: MagicMock, _mock_platform: MagicMock, tmp_path: Path
     ):
-        # Under sudo -E the cache belongs to the invoking user: root must
-        # neither adopt it nor clobber the user's perfectly valid id.
+        # Under sudo -E the cache belongs to the invoking user: root adopts
+        # the user's id (same machine, same identity) and never rewrites the
+        # user's file.
         ggshield_dir = tmp_path / ".ggshield"
         ggshield_dir.mkdir()
         cache = ggshield_dir / "machine_id"
@@ -625,9 +632,9 @@ class TestCacheWriteHardening:
         os.chmod(cache, 0o600)
         with patch(
             "ggshield.core.machine_id.get_user_home_dir", return_value=tmp_path
-        ), patch("ggshield.core.machine_id.os.geteuid", return_value=os.geteuid() + 1):
+        ), patch("ggshield.core.machine_id.os.geteuid", return_value=0):
             result = _get_machine_id()
-        assert result != "users-own-id"
+        assert result == "users-own-id"
         assert cache.read_text() == "users-own-id\n"
         assert (cache.stat().st_mode & 0o777) == 0o600
 

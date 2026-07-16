@@ -219,15 +219,29 @@ def _machine_id_cache_path() -> Path:
 _CACHE_READ_MAX = 65536
 
 
+def _is_trusted_cache_owner(file_uid: int, euid: int, home_uid: Optional[int]) -> bool:
+    """Whether ``file_uid`` may own the fallback-id cache.
+
+    Identity is client-asserted end to end (the server stores whatever
+    machine_id a client reports), so an own-files-only rule buys no integrity.
+    The requirement is that no OTHER unprivileged user can plant the file:
+    trust the current user, root, and the owner of the home the cache lives
+    in — so a ``sudo -E`` run and a plain user run converge on one id instead
+    of diverging.
+    """
+    return file_uid == euid or file_uid == 0 or file_uid == home_uid
+
+
 def _read_trusted_cache_line(path: Path) -> Optional[str]:
     """First non-empty line of the shared fallback-id cache, if trustworthy.
 
-    On POSIX, refuse a group/world-writable file or one not owned by the
-    current effective user, so a local attacker can't pre-seed the machine id
-    for a higher-privilege run (mirrors satori's ``paths::open_trusted_cache_file``).
-    Opens with ``O_NOFOLLOW`` and validates ownership/mode on the very
-    descriptor it reads: a stat-then-open by path could be raced, follows
-    planted symlinks, and blocks forever on a FIFO.
+    On POSIX, refuse a group/world-writable file or one owned by an unrelated
+    user (see ``_is_trusted_cache_owner``), so a local attacker can't pre-seed
+    the machine id for another account's run (mirrors satori's
+    ``paths::open_trusted_cache_file``). Opens with ``O_NOFOLLOW`` and
+    validates ownership/mode on the very descriptor it reads: a stat-then-open
+    by path could be raced, follows planted symlinks, and blocks forever on a
+    FIFO.
     """
     flags = os.O_RDONLY
     if os.name == "posix":
@@ -240,8 +254,15 @@ def _read_trusted_cache_line(path: Path) -> Optional[str]:
         st = os.fstat(fd)
         if not stat.S_ISREG(st.st_mode):
             return None
-        if os.name == "posix" and (st.st_mode & 0o022 or st.st_uid != os.geteuid()):
-            return None
+        if os.name == "posix":
+            if st.st_mode & 0o022:
+                return None
+            try:
+                home_uid: Optional[int] = os.stat(path.parent.parent).st_uid
+            except OSError:
+                home_uid = None
+            if not _is_trusted_cache_owner(st.st_uid, os.geteuid(), home_uid):
+                return None
         data = os.read(fd, _CACHE_READ_MAX)
     except OSError:
         return None
@@ -255,14 +276,17 @@ def _read_trusted_cache_line(path: Path) -> Optional[str]:
 
 
 def _write_machine_id_cache(path: Path, value: str) -> None:
-    """Persist the fallback id as an owner-only (0600) regular file.
+    """Persist the fallback id as an owner-writable (0644) regular file.
 
-    A umask-derived write can be group-writable (umask 002 is the RHEL/Fedora
-    default), which the trust gate itself would reject on the next run — the id
-    would then churn forever, one new server-side Endpoint row per run. Never
-    write through an existing path either: a foreign-owned file is left
-    untouched (root under ``sudo -E`` must not clobber the user's id), anything
-    else (loose-permission file, planted symlink) is replaced, since in-place
+    World-readable so a run under another trusted identity (root service,
+    ``sudo -E``) can adopt the id — the value is no more secret locally than
+    the world-readable ``/etc/machine-id``. Never group/world-WRITABLE: a
+    umask-derived write can be (umask 002 is the RHEL/Fedora default), which
+    the trust gate itself would reject on the next run — the id would then
+    churn forever, one new server-side Endpoint row per run. Never write
+    through an existing path either: a foreign-owned file is left untouched
+    (root under ``sudo -E`` must not clobber the user's id), anything else
+    (loose-permission file, planted symlink) is replaced, since in-place
     truncation preserves the untrusted mode.
     """
     try:
@@ -278,10 +302,10 @@ def _write_machine_id_cache(path: Path, value: str) -> None:
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         if os.name == "posix":
             flags |= os.O_NOFOLLOW
-        fd = os.open(path, flags, 0o600)
+        fd = os.open(path, flags, 0o644)
         try:
             if os.name == "posix":
-                os.fchmod(fd, 0o600)
+                os.fchmod(fd, 0o644)
             os.write(fd, (value + "\n").encode("utf-8"))
         finally:
             os.close(fd)
