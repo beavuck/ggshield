@@ -102,13 +102,17 @@ def _get_macos_system_id() -> Optional[str]:
 _UUID_HEX_RE = re.compile(r"[0-9a-fA-F]{32}")
 
 # Placeholder SMBIOS UUIDs reported by unconfigured or cloned firmware (blank
-# boards, golden images, AMI default). They identify an image, not a machine:
-# adopting one collapses every such endpoint in an account onto one machine_id.
+# boards, golden images, vendor defaults). They identify an image, not a
+# machine: adopting one collapses every such endpoint in an account onto one
+# machine_id. Aligned with osquery's kPlaceholderHardwareUUIDList.
 _SENTINEL_UUID_HEX = frozenset(
     (
         "0" * 32,
         "f" * 32,
         "03000200040005000006000700080009",  # AMI default
+        "030201000504070608090a0b0c0d0e0f",  # byte-order test pattern
+        "10000000000080000040000000000000",
+        "fe" * 16,  # Windows placeholder (Win 11 IoT LTSC)
     )
 )
 

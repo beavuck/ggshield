@@ -265,6 +265,11 @@ class TestNormalizeUuid:
             pytest.param("ffffffff-ffff-ffff-ffff-ffffffffffff", id="all_fs_lower"),
             pytest.param("0" * 32, id="all_zeros_undashed"),
             pytest.param("03000200-0400-0500-0006-000700080009", id="ami_default"),
+            # The rest of osquery's placeholder blocklist (see osquery
+            # core/system.cpp kPlaceholderHardwareUUIDList and issue #8887).
+            pytest.param("03020100-0504-0706-0809-0a0b0c0d0e0f", id="scrambled"),
+            pytest.param("10000000-0000-8000-0040-000000000000", id="one_zeros"),
+            pytest.param("FEFEFEFE-FEFE-FEFE-FEFE-FEFEFEFEFEFE", id="fefe_windows"),
         ],
     )
     def test_rejects_sentinel_uuids(self, value: str):
