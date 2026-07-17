@@ -131,8 +131,10 @@ class Claude(Agent):
         return 0
 
     def is_caller(self, hook_payload: Dict[str, Any]) -> bool:
-        return "session_id" in hook_payload and "claude" in hook_payload.get(
-            "transcript_path", ""
+        # transcript_path may be present but null (Codex sends it as a nullable
+        # required field), so `or ""` guards against a None slipping through.
+        return "session_id" in hook_payload and "claude" in (
+            hook_payload.get("transcript_path") or ""
         )
 
     def settings_path(self, mode: Literal["local", "global"]) -> Path:

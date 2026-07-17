@@ -94,7 +94,9 @@ class VSCode(Agent):
         return 0
 
     def is_caller(self, hook_payload: Dict[str, Any]) -> bool:
-        return "github.copilot-chat" in hook_payload.get("transcript_path", "").lower()
+        return (
+            "github.copilot-chat" in (hook_payload.get("transcript_path") or "").lower()
+        )
 
     def settings_path(self, mode: Literal["local", "global"]) -> Path:
         return (

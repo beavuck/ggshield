@@ -938,6 +938,25 @@ class TestAIHookScannerParseInput:
         assert payload.content == "whoami"
         assert isinstance(payload.agent, Codex)
 
+    def test_codex_pre_tool_use_null_transcript_path(self):
+        """Codex sends transcript_path as a present-but-null field; detection
+        must fall back to turn_id instead of crashing on the None."""
+        data = {
+            "session_id": "273ad859-3608-4799-9971-fa15ecb1a65c",
+            "transcript_path": None,
+            "cwd": "/home/user/project",
+            "hook_event_name": "PreToolUse",
+            "turn_id": "turn_123",
+            "model": "gpt-5.4",
+            "tool_name": "Bash",
+            "tool_input": {"command": "whoami"},
+            "tool_use_id": "call_123",
+        }
+        payload = parse_hook_input(json.dumps(data))[0]
+        assert payload.event_type == EventType.PRE_TOOL_USE
+        assert payload.tool == Tool.BASH
+        assert isinstance(payload.agent, Codex)
+
     def test_pre_tool_use_read_with_missing_file(self):
         """PRE_TOOL_USE with tool_name 'read' and non-existing file yields empty content."""
         content = json.dumps(

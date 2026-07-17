@@ -199,7 +199,7 @@ def emit_fail_open_response(stdin_content: str, error: Exception) -> int:
     ui.display_warning(warning)
     try:
         payload = parse_hook_input(stdin_content)[-1]
-    except ValueError:
+    except Exception:
         # We can't even tell which agent is calling us, so we can't emit a
         # well-formed response. Agents treat exit 1 as a non-blocking error.
         return 1
