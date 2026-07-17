@@ -132,8 +132,11 @@ class TestParseServersBlock:
         data: Dict[str, Any],
         scope: Scope = Scope.USER,
         project: Optional[Path] = None,
+        base_dir: Optional[Path] = None,
     ) -> List[MCPConfiguration]:
-        return list(Cursor()._parse_servers_block(data, scope, project))
+        return list(
+            Cursor()._parse_servers_block(data, scope, project, base_dir=base_dir)
+        )
 
     def test_mcp_servers_key_stdio(self):
         data = {
@@ -201,6 +204,101 @@ class TestParseServersBlock:
         assert configs[1].name == "s2"
         assert configs[1].command == "python"
 
+    def test_servers_as_relative_string_path_resolved_against_base_dir(
+        self, tmp_path: Path
+    ):
+        sub = tmp_path / "mcp"
+        sub.mkdir()
+        (sub / "servers.json").write_text(
+            json.dumps({"mcpServers": {"rel-srv": {"command": "node"}}})
+        )
+        configs = self._parse({"mcpServers": "./mcp/servers.json"}, base_dir=tmp_path)
+        assert len(configs) == 1
+        assert configs[0].name == "rel-srv"
+
+    def test_servers_as_string_path_with_wrapped_layout(self, tmp_path: Path):
+        external = tmp_path / "external.json"
+        external.write_text(
+            json.dumps({"mcpServers": {"wrapped-srv": {"command": "node"}}})
+        )
+        configs = self._parse({"mcpServers": str(external)})
+        assert len(configs) == 1
+        assert configs[0].name == "wrapped-srv"
+        assert configs[0].command == "node"
+
+    def test_servers_as_string_path_chaining_not_followed(self, tmp_path: Path):
+        # A referenced file must hold a server map; indirection to yet another
+        # file is not part of any known format and must not loop.
+        chained = tmp_path / "chained.json"
+        chained.write_text(json.dumps({"mcpServers": str(chained)}))
+        assert self._parse({"mcpServers": str(chained)}) == []
+
+    def test_servers_as_list_with_string_elements(self, tmp_path: Path):
+        external = tmp_path / "external.json"
+        external.write_text(
+            json.dumps({"mcpServers": {"from-file": {"command": "node"}}})
+        )
+        data = {
+            "mcpServers": [
+                "./external.json",
+                {"inline-srv": {"command": "python"}},
+            ]
+        }
+        configs = self._parse(data, base_dir=tmp_path)
+        assert [c.name for c in configs] == ["from-file", "inline-srv"]
+
+    def test_servers_as_list_with_wrapped_element(self):
+        data = {"mcpServers": [{"mcpServers": {"srv": {"command": "node"}}}]}
+        configs = self._parse(data)
+        assert [c.name for c in configs] == ["srv"]
+
+    def test_list_inside_referenced_file_not_followed(self, tmp_path: Path):
+        # A list in a referenced file could hold string elements, reopening
+        # file-to-file indirection; it is dropped like any non-map value.
+        external = tmp_path / "external.json"
+        external.write_text(json.dumps({"mcpServers": [{"srv": {"command": "node"}}]}))
+        assert self._parse({"mcpServers": str(external)}) == []
+
+    def test_relative_string_path_without_base_dir_yields_nothing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        (tmp_path / "servers.json").write_text(
+            json.dumps({"mcpServers": {"srv": {"command": "node"}}})
+        )
+        monkeypatch.chdir(tmp_path)
+        assert self._parse({"mcpServers": "./servers.json"}) == []
+
+    def test_non_dict_entry_skipped(self):
+        data = {"mcpServers": {"weird": "oops", "ok": {"command": "node"}}}
+        configs = self._parse(data)
+        assert [c.name for c in configs] == ["ok"]
+
+    def test_servers_as_unexpected_type_yields_nothing(self):
+        assert self._parse({"mcpServers": 42}) == []
+
+    def test_servers_as_unstatable_string_path_yields_nothing(self):
+        # Drop a string path that is too long for the filesystem to stat
+        assert self._parse({"mcpServers": "/" + "x" * 5000}) == []
+
+    def test_list_of_lists_dropped(self):
+        # All documented formats keep the list flat.
+        data = {"mcpServers": [[{"srv": {"command": "node"}}]]}
+        assert self._parse(data) == []
+
+    def test_wrapped_list_inside_list_dropped(self):
+        # A wrapped element reopening a list is nesting too, whatever the
+        # wrapper.
+        data = {"mcpServers": [{"mcpServers": [{"srv": {"command": "node"}}]}]}
+        assert self._parse(data) == []
+
+    def test_deeply_nested_lists_dropped(self):
+        # Avoid crashing in case of a maliciously crafted config file with many levels of nesting.
+        # Already covered since we don't support nested lists, kept in case we change our minds.
+        servers: Any = {"srv": {"command": "node"}}
+        for _ in range(10_000):
+            servers = [servers]
+        assert self._parse({"mcpServers": servers}) == []
+
 
 # ---------------------------------------------------------------------------
 # Agent._load_file
@@ -225,6 +323,10 @@ class TestLoadFile:
         f = tmp_path / "list.json"
         f.write_text(json.dumps([1, 2, 3]))
         assert Cursor()._load_file(f) is None
+
+    def test_returns_none_when_stat_fails(self, tmp_path: Path):
+        # Avoid crashing on long file names
+        assert Cursor()._load_file(tmp_path / ("x" * 5000)) is None
 
 
 # ---------------------------------------------------------------------------
