@@ -76,7 +76,7 @@ class Codex(Agent):
     def is_caller(self, hook_payload: Dict[str, Any]) -> bool:
         return (
             "turn_id" in hook_payload
-            or ".codex" in hook_payload.get("transcript_path", "").lower()
+            or ".codex" in (hook_payload.get("transcript_path") or "").lower()
         )
 
     def settings_path(self, mode: Literal["local", "global"]) -> Path:
