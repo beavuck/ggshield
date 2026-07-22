@@ -614,6 +614,27 @@ class TestAIHookScannerParseInput:
         assert payload.scannable.content == "this is the content"
         assert isinstance(payload.agent, Claude)
 
+    def test_claude_pre_tool_use_mcp_scans_tool_input(self):
+        """PreToolUse for an MCP tool scans the serialized tool_input, so a
+        secret in an MCP argument is caught before it reaches the server
+        (NHI-1845)."""
+        data = {
+            "session_id": "3b7ae0c5-0862-4e14-aa2c-12fad909c323",
+            "transcript_path": "/home/user1/.claude/projects/foo/3b7ae0c5.jsonl",
+            "cwd": "/home/user1/foo",
+            "permission_mode": "default",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "mcp__github__create_issue",
+            "tool_input": {"title": "creds", "body": "token=abc123secret"},
+            "tool_use_id": "toolu_01WabtWJpzf1ZJ8GJ3JfQEmq",
+        }
+        payload = parse_hook_input(json.dumps(data))[0]
+        assert payload.event_type == EventType.PRE_TOOL_USE
+        assert payload.tool == Tool.MCP
+        assert not payload.empty
+        assert "token=abc123secret" in payload.scannable.content
+        assert isinstance(payload.agent, Claude)
+
     def test_claude_post_tool_use_bash(self):
         """Test Claude Code PostToolUse with Bash (simulated cat command result)."""
         # From raw_hooks_logs: Claude PostToolUse Bash - tool_response has stdout
@@ -865,6 +886,10 @@ class TestAIHookScannerParseInput:
         payload = parse_hook_input(json.dumps(data))[0]
         assert payload.event_type == EventType.PRE_TOOL_USE
         assert payload.tool == Tool.MCP
+        # Copilot MCP tools are only identified in post_process_payload, after
+        # content selection, so the catch-all input scan must cover them.
+        assert not payload.empty
+        assert "value" in payload.scannable.content
         assert isinstance(payload.agent, Copilot)
 
     def test_copilot_post_tool_use_run_in_terminal(self):
@@ -974,7 +999,7 @@ class TestAIHookScannerParseInput:
         assert payload.content == ""
 
     def test_pre_tool_use_other_tool(self):
-        """PRE_TOOL_USE with unknown tool yields Tool.OTHER and empty content."""
+        """PRE_TOOL_USE with unknown tool yields Tool.OTHER and scans its input."""
         data = {
             "hook_event_name": "PreToolUse",
             "tool_name": "SomeUnknownTool",
@@ -984,7 +1009,20 @@ class TestAIHookScannerParseInput:
         payload = parse_hook_input(json.dumps(data))[0]
         assert payload.event_type == EventType.PRE_TOOL_USE
         assert payload.tool == Tool.OTHER
-        assert payload.content == ""
+        assert "value" in payload.content
+
+    def test_pre_tool_use_other_tool_empty_input(self):
+        """PRE_TOOL_USE with an unknown tool and no input stays empty, so no
+        scan API call is made."""
+        data = {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "SomeUnknownTool",
+            "tool_input": {},
+            "cursor_version": "1.2.3",
+        }
+        payload = parse_hook_input(json.dumps(data))[0]
+        assert payload.tool == Tool.OTHER
+        assert payload.empty
 
     def test_other_event_type(self):
         """Unknown event type yields EventType.OTHER with empty content."""

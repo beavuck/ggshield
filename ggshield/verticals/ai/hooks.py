@@ -153,6 +153,12 @@ def parse_hook_input(raw_content: str) -> list[HookPayload]:
         elif tool == Tool.READ:
             # We only need to deal with the identifier, the content will be read by the Scannable
             identifier = lookup(tool_input, ["file_path", "filePath", "path"], "")
+        elif tool_input:
+            # MCP and unrecognized tool arguments can carry secrets bound for
+            # potentially external servers. Scan them, like tool_output below.
+            # Also covers agents whose MCP tools are only identified later, in
+            # post_process_payload (e.g. Copilot).
+            content = json.dumps(tool_input)
 
     elif event_type == EventType.POST_TOOL_USE:
         tool = _parse_tool(data)
