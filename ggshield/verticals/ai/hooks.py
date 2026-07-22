@@ -1,6 +1,8 @@
 import hashlib
 import json
 import re
+import subprocess
+import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Sequence, Set
 
@@ -298,6 +300,47 @@ def _parse_command(
     return payloads
 
 
+def _send_desktop_notification(title: str, message: str) -> None:
+    """Deliver a desktop notification, dispatching to the right backend per OS.
+
+    On macOS we shell out to the native ``osascript``: it ships with every
+    macOS (so it works on Homebrew installs, which strip notifypy's bundled
+    Notificator.app), is arm64-native (notifypy's applet is Intel-only and
+    Apple-deprecated) and produces a normal Notification Center banner. The
+    strings are passed as run-handler arguments rather than interpolated into
+    the AppleScript source: this is injection-safe (the message embeds
+    attacker-influenced command text) and correctness-safe, as an AppleScript
+    string literal can't represent non-ASCII or control characters (accented
+    paths, emoji, tabs...). ``stdin`` is detached and a timeout enforced so a
+    misbehaving notifier can't stall the hook. Other platforms use notifypy.
+    """
+    if sys.platform == "darwin":
+        subprocess.run(
+            [
+                "osascript",
+                "-e",
+                "on run argv",
+                "-e",
+                "display notification (item 1 of argv) with title (item 2 of argv)",
+                "-e",
+                "end run",
+                "--",
+                message,
+                title,
+            ],
+            check=False,
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=10,
+        )
+    else:
+        notification = Notify()
+        notification.title = title
+        notification.message = message
+        notification.application_name = "ggshield"
+        notification.send()
+
+
 class AIHookScanner:
     """AI hook scanner.
 
@@ -450,32 +493,36 @@ class AIHookScanner:
         result: HookResult,
     ) -> None:
         """
-        Send desktop notification when secrets are detected.
+        Send a best-effort desktop notification when secrets are detected.
+
+        This runs on the security-critical PostToolUse path (the secret has
+        already leaked to the agent), so it must NEVER crash the hook: the
+        whole body is guarded and any failure is swallowed, letting the block
+        decision still be emitted.
 
         Args:
-            nbr_secrets: Number of detected secrets
-            tool: Tool used to detect the secrets
-            agent_name: Name of the agent that detected the secrets
+            result: The blocking scan result.
         """
-        tool = result.payload.tool
-        source = "using a tool"
-        if tool == Tool.READ:
-            source = "reading a file"
-        elif tool == Tool.BASH:
-            # This should always be present, unless agents changed their payload in an update.
-            command = result.payload.raw.get("tool_input", {}).get("command", "")
-            source = (
-                f"running the command `{command}`" if command else "running a command"
-            )
-        notification = Notify()
-        notification.title = "ggshield - Secrets Detected"
-        notification.message = (
-            f"{result.payload.agent.display_name} got access to {result.nbr_secrets}"
-            f" {pluralize('secret', result.nbr_secrets)} by {source}"
-        )
-        notification.application_name = "ggshield"
         try:
-            notification.send()
+            tool = result.payload.tool
+            source = "using a tool"
+            if tool == Tool.READ:
+                source = "reading a file"
+            elif tool == Tool.BASH:
+                # This should always be present, unless agents changed their
+                # payload in an update.
+                command = result.payload.raw.get("tool_input", {}).get("command", "")
+                source = (
+                    f"running the command `{command}`"
+                    if command
+                    else "running a command"
+                )
+            title = "ggshield - Secrets Detected"
+            message = (
+                f"{result.payload.agent.display_name} got access to {result.nbr_secrets}"
+                f" {pluralize('secret', result.nbr_secrets)} by {source}"
+            )
+            _send_desktop_notification(title, message)
         except Exception:
             # This is best effort, we don't want to propagate an error
             # if the notification fails.

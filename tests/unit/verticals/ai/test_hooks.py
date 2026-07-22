@@ -1,4 +1,5 @@
 import json
+import subprocess
 from collections import Counter
 from pathlib import Path
 from typing import List, Set
@@ -200,6 +201,29 @@ class TestAIHookScannerScan:
         result = mock_notify.call_args[0][0]
         assert result.nbr_secrets == 1  # nbr_secrets
         assert result.payload.tool == Tool.BASH  # tool
+
+    @patch("ggshield.verticals.ai.hooks._send_desktop_notification")
+    def test_scan_post_tool_use_notifier_failure_still_emits_block(
+        self, mock_send: MagicMock
+    ):
+        """GIVEN a PostToolUse leak whose desktop notifier backend crashes
+        (e.g. BinaryNotFound on a Homebrew install)
+        WHEN scan() runs
+        THEN the notifier failure is swallowed and scan() still returns the
+        normal block exit code instead of crashing the hook (NHI-1681)."""
+        mock_send.side_effect = Exception("BinaryNotFound")
+        scanner = AIHookScanner(_mock_scanner(["sk-xxx"]))
+        data = {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "echo sk-xxx"},
+            "tool_response": {"stdout": "sk-xxx\n"},
+            "transcript_path": "/home/user/.claude/projects/foo/session.jsonl",
+            "session_id": "427ae0c5-0862-4e14-aa2c-12fad909c323",
+        }
+        # Must not raise, and must still reach output_result() (exit 0 for Claude).
+        assert scanner.scan(json.dumps(data)) == 0
+        mock_send.assert_called_once()
 
     def test_scan_pre_tool_use_with_secrets_blocks(self):
         """scan() on PRE_TOOL_USE with secrets returns block result."""
@@ -421,33 +445,100 @@ class TestSendSecretNotification:
             ),
         )
 
-    @patch("ggshield.verticals.ai.hooks.Notify")
-    def test_notification_for_bash_tool(self, mock_notify_cls: MagicMock):
-        """Notification for BASH tool says 'running the command'
-        and contains the command run."""
+    @patch("ggshield.verticals.ai.hooks._send_desktop_notification")
+    def test_notification_for_bash_tool(self, mock_send: MagicMock):
+        """GIVEN a BASH-tool result
+        WHEN a notification is sent
+        THEN the message says 'running the command' with the command run."""
         AIHookScanner._send_secret_notification(
             self._result(1, Tool.BASH, Claude(), input_command="ls -la")
         )
-        instance = mock_notify_cls.return_value
-        assert "running the command `ls -la`" in instance.message
-        assert "Claude Code" in instance.message
-        instance.send.assert_called_once()
+        title, message = mock_send.call_args.args
+        assert title == "ggshield - Secrets Detected"
+        assert "running the command `ls -la`" in message
+        assert "Claude Code" in message
 
-    @patch("ggshield.verticals.ai.hooks.Notify")
-    def test_notification_for_read_tool(self, mock_notify_cls: MagicMock):
-        """Notification for READ tool says 'reading a file'."""
+    @patch("ggshield.verticals.ai.hooks._send_desktop_notification")
+    def test_notification_for_read_tool(self, mock_send: MagicMock):
+        """GIVEN a READ-tool result
+        WHEN a notification is sent
+        THEN the message says 'reading a file'."""
         AIHookScanner._send_secret_notification(self._result(2, Tool.READ, Cursor()))
-        instance = mock_notify_cls.return_value
-        assert "reading a file" in instance.message
-        assert "2" in instance.message
-        instance.send.assert_called_once()
+        _, message = mock_send.call_args.args
+        assert "reading a file" in message
+        assert "2" in message
+
+    @patch("ggshield.verticals.ai.hooks._send_desktop_notification")
+    def test_notification_for_other_tool(self, mock_send: MagicMock):
+        """GIVEN an OTHER-tool result
+        WHEN a notification is sent
+        THEN the message says 'using a tool'."""
+        AIHookScanner._send_secret_notification(self._result(1, Tool.OTHER, Copilot()))
+        _, message = mock_send.call_args.args
+        assert "using a tool" in message
+
+    @patch("ggshield.verticals.ai.hooks._send_desktop_notification")
+    def test_notification_failure_never_propagates(self, mock_send: MagicMock):
+        """GIVEN a notifier backend that raises (e.g. missing binary on brew)
+        WHEN a notification is sent
+        THEN the exception is swallowed so the hook can still emit its block."""
+        mock_send.side_effect = Exception("BinaryNotFound")
+        # Must not raise.
+        AIHookScanner._send_secret_notification(self._result(1, Tool.BASH, Claude()))
+
+
+class TestSendDesktopNotification:
+    """Unit tests for the per-OS desktop notification backends."""
+
+    @patch("ggshield.verticals.ai.hooks.subprocess.run")
+    @patch("ggshield.verticals.ai.hooks.sys")
+    def test_macos_uses_native_osascript(
+        self, mock_sys: MagicMock, mock_run: MagicMock
+    ):
+        """GIVEN a macOS host
+        WHEN a desktop notification is sent
+        THEN it invokes osascript, passing the (attacker-influenced) message
+        and title as run-handler arguments rather than interpolating them into
+        the AppleScript source (injection- and unicode-safe)."""
+        mock_sys.platform = "darwin"
+        from ggshield.verticals.ai.hooks import _send_desktop_notification
+
+        # Message with a quote, an accent, an emoji and a tab: none of these
+        # can be represented in an AppleScript string literal, so they must be
+        # passed as arguments, not baked into the script.
+        message = 'ran `café` ❤\ttell app "Finder"'
+        _send_desktop_notification("ggshield - Secrets Detected", message)
+
+        args = mock_run.call_args.args[0]
+        assert args[0] == "osascript"
+        # Uses a run handler reading from argv; the raw strings are the trailing
+        # argv items, never embedded in any "-e" script fragment.
+        assert "on run argv" in args
+        assert message == args[-2]
+        assert "ggshield - Secrets Detected" == args[-1]
+        script_fragments = [args[i + 1] for i, a in enumerate(args) if a == "-e"]
+        assert not any(message in frag for frag in script_fragments)
+        # A hook must never hang or read stdin from a notifier subprocess.
+        assert mock_run.call_args.kwargs["stdin"] is subprocess.DEVNULL
+        assert mock_run.call_args.kwargs["timeout"] == 10
 
     @patch("ggshield.verticals.ai.hooks.Notify")
-    def test_notification_for_other_tool(self, mock_notify_cls: MagicMock):
-        """Notification for OTHER tool says 'using a tool'."""
-        AIHookScanner._send_secret_notification(self._result(1, Tool.OTHER, Copilot()))
+    @patch("ggshield.verticals.ai.hooks.sys")
+    def test_non_macos_uses_notifypy(
+        self, mock_sys: MagicMock, mock_notify_cls: MagicMock
+    ):
+        """GIVEN a non-macOS host
+        WHEN a desktop notification is sent
+        THEN it uses the notifypy backend."""
+        mock_sys.platform = "linux"
+        from ggshield.verticals.ai.hooks import _send_desktop_notification
+
+        _send_desktop_notification("title", "message")
+
         instance = mock_notify_cls.return_value
-        assert "using a tool" in instance.message
+        assert instance.title == "title"
+        assert instance.message == "message"
+        assert instance.application_name == "ggshield"
         instance.send.assert_called_once()
 
 
