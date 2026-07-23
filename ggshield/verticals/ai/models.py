@@ -249,10 +249,12 @@ class Agent(ABC):
 
     def _parse_servers_block(
         self,
-        data: Dict[str, Dict[str, Any]],
+        data: Dict[str, Any],
         scope: Scope,
         project: Optional[Path],
         display_name: Optional[str] = None,
+        base_dir: Optional[Path] = None,
+        _in_list: bool = False,
     ) -> Iterator[MCPConfiguration]:
         """Utility function to parse a "mcpServer" block and return the MCP server entries.
 
@@ -262,9 +264,47 @@ class Agent(ABC):
         servers = data.get(
             "mcpServers", data.get("servers", data.get("mcp_servers", {}))
         )
+        # Handle path to a config file
+        if isinstance(servers, str):
+            path = Path(servers)
+            if not path.is_absolute():
+                if base_dir is None:
+                    # Without an anchor a relative location would resolve
+                    # against the process cwd; drop it instead.
+                    return
+                path = base_dir / path
+            if (loaded := self._load_file(path)) is None:
+                return
+            # The official shape is {"mcpServers": {...}}, but non-wrapped configs are sometimes leniently supported.
+            # Also we expect only the dict shape for referenced config files.
+            # This also prevents a potential infinite loop if the referenced file points back to the original file.
+            servers = loaded.get(
+                "mcpServers", loaded.get("servers", loaded.get("mcp_servers", loaded))
+            )
+        # Handle list of servers. Nested lists are undocumented, so we don't support them.
+        elif isinstance(servers, list):
+            if _in_list:
+                return
+            for server in servers:
+                # An element may itself be a wrapped block: don't double-wrap.
+                if not (
+                    isinstance(server, dict)
+                    and server.keys() & {"mcpServers", "servers", "mcp_servers"}
+                ):
+                    server = {"mcpServers": server}
+                yield from self._parse_servers_block(
+                    server, scope, project, display_name, base_dir, _in_list=True
+                )
+            return
+        if not isinstance(servers, dict):
+            return
         for name, entry in servers.items():
+            if not isinstance(entry, dict):
+                continue
             if "url" in entry:
-                if entry.get("transport") == "sse":
+                # The transport key is spelled "transport" or "type" depending
+                # on the assistant.
+                if entry.get("transport", entry.get("type")) == "sse":
                     transport = Transport.SSE
                 else:
                     transport = Transport.HTTP
@@ -380,9 +420,9 @@ class Agent(ABC):
 
     def _load_file(self, path: Path) -> Optional[Dict[str, Any]]:
         """Load a file and return the data, or None if the file doesn't exist."""
-        if not path.is_file():
-            return None
         try:
+            if not path.is_file():
+                return None
             raw = path.read_text()
             # Fallback to JSON
             if path.suffix == ".toml":

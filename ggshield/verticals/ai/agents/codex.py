@@ -123,12 +123,15 @@ class Codex(Agent):
             display_name = None
             mcp_location = ".mcp.json"
 
-        # Try to read the mcp.json file
-        if not (data := self._load_file(plugin_dir / mcp_location)):
-            return
-
+        # mcp_location may be a path relative to the plugin dir, an inline
+        # servers block, or a list mixing both; _parse_servers_block handles
+        # all of them (including bare {name: entry} referenced files).
         yield from self._parse_servers_block(
-            data, scope, None if scope == Scope.USER else plugin_dir, display_name
+            {"mcpServers": mcp_location},
+            scope,
+            None if scope == Scope.USER else plugin_dir,
+            display_name,
+            base_dir=plugin_dir,
         )
 
     def parse_mcp_activity(
